@@ -518,6 +518,18 @@ export async function onRequestPost({ request, env }) {
         }, 404);
       }
 
+      const searchReply =
+        "## Web Search Results\n\n" +
+        webSearchSources.map((source, index) =>
+          `### ${index + 1}. ${source.title}\n\n` +
+          `${source.content || "Open the source to read more."}\n\n` +
+          `Source: ${source.url}`
+        ).join("\n\n");
+
+      return jsonResponse({
+        reply: searchReply
+      });
+        
       const searchContext = webSearchSources.map((source, index) =>
         `SOURCE ${index + 1}\nTitle: ${source.title}\nURL: ${source.url}\nContent: ${(source.content || "").slice(0, 1500)}`
       ).join("\n\n");
