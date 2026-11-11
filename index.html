@@ -729,20 +729,22 @@ $("chatForm").addEventListener("submit", async (event) => {
   try {
     const idToken = await currentUser.getIdToken();
 
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + idToken
-      },
-      body: JSON.stringify({
-        mode: currentMode,
-        message: userText,
-        history: conversationHistory.slice(-20),
-        imageData: currentImage
-      })
-      signal: AbortSignal.timeout(65000)
-    });
+    
+const response = await fetch("/api/chat", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer " + idToken
+  },
+  body: JSON.stringify({
+    mode: currentMode,
+    message: userText,
+    history: conversationHistory.slice(-20),
+    imageData: currentImage
+  }),
+  signal: AbortSignal.timeout(65000)
+});
+    
 
     const data = await response.json().catch(() => ({}));
 
