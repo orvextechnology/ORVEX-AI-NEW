@@ -741,6 +741,7 @@ $("chatForm").addEventListener("submit", async (event) => {
         history: conversationHistory.slice(-20),
         imageData: currentImage
       })
+      signal: AbortSignal.timeout(65000)
     });
 
     const data = await response.json().catch(() => ({}));
