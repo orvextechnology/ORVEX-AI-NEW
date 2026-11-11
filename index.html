@@ -1,0 +1,792 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#090b18">
+<title>ORVEX AI — Intelligent AI Platform</title>
+<meta name="description" content="ORVEX AI is an intelligent platform for AI chat, web search, translation, image understanding and productivity.">
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+
+<style>
+:root {
+  --bg:#090b18;
+  --panel:#11162a;
+  --panel2:#171e35;
+  --purple:#805cff;
+  --cyan:#42d9f5;
+  --text:#f5f6ff;
+  --muted:#9ba6c5;
+  --border:#28304b;
+  --danger:#ff6b78;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+}
+button,input,textarea,select{font:inherit}
+button{cursor:pointer}
+.hidden{display:none!important}
+
+/* AUTH */
+#authScreen{
+  min-height:100vh;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  padding:22px;
+  background:radial-gradient(circle at top,#20204a,#090b18 65%);
+}
+.auth-card{
+  width:100%;
+  max-width:420px;
+  padding:30px 24px;
+  background:rgba(17,22,42,.96);
+  border:1px solid var(--border);
+  border-radius:22px;
+  box-shadow:0 20px 70px #0008;
+}
+.logo{
+  text-align:center;
+  font-size:34px;
+  font-weight:900;
+  letter-spacing:3px;
+  background:linear-gradient(90deg,var(--purple),var(--cyan));
+  -webkit-background-clip:text;
+  color:transparent;
+}
+.tagline{
+  text-align:center;
+  color:var(--muted);
+  font-size:13px;
+  margin:8px 0 25px;
+}
+.auth-card h2{text-align:center;margin:0 0 20px}
+.field{
+  width:100%;
+  padding:14px;
+  margin:8px 0;
+  border:1px solid var(--border);
+  border-radius:11px;
+  background:#090e20;
+  color:white;
+  outline:none;
+}
+.field:focus{border-color:var(--purple)}
+.primary{
+  width:100%;
+  padding:14px;
+  margin-top:12px;
+  border:0;
+  border-radius:11px;
+  color:white;
+  font-weight:bold;
+  background:linear-gradient(100deg,var(--purple),#526de9);
+}
+.primary:disabled{opacity:.5;cursor:not-allowed}
+.auth-switch{
+  text-align:center;
+  color:var(--muted);
+  font-size:14px;
+  margin-top:20px;
+}
+.auth-switch button{
+  background:none;
+  border:0;
+  color:var(--cyan);
+  font-weight:bold;
+}
+.notice{
+  min-height:20px;
+  color:var(--danger);
+  font-size:13px;
+  text-align:center;
+  margin-top:10px;
+  overflow-wrap:anywhere;
+}
+
+/* APP */
+#appScreen{min-height:100vh}
+.topbar{
+  height:65px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:0 18px;
+  border-bottom:1px solid var(--border);
+  background:#0d1122;
+  position:sticky;
+  top:0;
+  z-index:5;
+}
+.brand{
+  font-size:22px;
+  font-weight:900;
+  letter-spacing:2px;
+  background:linear-gradient(90deg,var(--purple),var(--cyan));
+  -webkit-background-clip:text;
+  color:transparent;
+}
+.top-actions{display:flex;gap:8px;align-items:center}
+.small-btn{
+  border:1px solid var(--border);
+  background:var(--panel);
+  color:white;
+  padding:9px 12px;
+  border-radius:9px;
+}
+.layout{
+  max-width:1100px;
+  margin:auto;
+  padding:22px 16px 30px;
+}
+.welcome{text-align:center;margin:25px 0}
+.welcome h1{font-size:clamp(26px,5vw,42px);margin:0 0 10px}
+.gradient{
+  background:linear-gradient(90deg,var(--purple),var(--cyan));
+  -webkit-background-clip:text;
+  color:transparent;
+}
+.welcome p{color:var(--muted);font-size:14px}
+.tools{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:10px;
+  margin:22px 0;
+}
+.tool{
+  background:var(--panel);
+  border:1px solid var(--border);
+  color:white;
+  padding:14px 8px;
+  border-radius:13px;
+  text-align:center;
+  font-size:13px;
+}
+.tool.active{
+  border-color:var(--purple);
+  background:#211b43;
+}
+.tool span{display:block;font-size:22px;margin-bottom:7px}
+.chat-panel{
+  border:1px solid var(--border);
+  background:var(--panel);
+  border-radius:18px;
+  overflow:hidden;
+}
+.chat-heading{
+  padding:14px 16px;
+  border-bottom:1px solid var(--border);
+  color:var(--muted);
+  font-size:13px;
+}
+.messages{
+  min-height:240px;
+  max-height:55vh;
+  overflow-y:auto;
+  padding:16px;
+}
+.message{
+  max-width:90%;
+  padding:13px 15px;
+  border-radius:14px;
+  margin:10px 0;
+  line-height:1.6;
+  font-size:14px;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+}
+.user-message{
+  background:#29224e;
+  margin-left:auto;
+}
+.ai-message{
+  background:var(--panel2);
+  border:1px solid var(--border);
+  margin-right:auto;
+}
+.message img{
+  max-width:100%;
+  border-radius:10px;
+  margin-top:10px;
+}
+.composer{
+  padding:14px;
+  border-top:1px solid var(--border);
+}
+#messageInput{
+  width:100%;
+  min-height:65px;
+  resize:vertical;
+  border:1px solid var(--border);
+  background:#090e20;
+  color:white;
+  border-radius:12px;
+  padding:13px;
+  outline:none;
+}
+.composer-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:8px;
+  margin-top:10px;
+}
+.composer-actions{display:flex;gap:8px;align-items:center}
+.action-btn{
+  border:1px solid var(--border);
+  background:var(--panel2);
+  color:white;
+  padding:11px 13px;
+  border-radius:10px;
+}
+.send-btn{
+  border:0;
+  background:linear-gradient(100deg,var(--purple),#526de9);
+  color:white;
+  font-weight:bold;
+  padding:12px 22px;
+  border-radius:10px;
+}
+#filePreview{
+  color:var(--cyan);
+  font-size:12px;
+  margin-top:8px;
+  overflow-wrap:anywhere;
+}
+.footer{
+  text-align:center;
+  color:var(--muted);
+  font-size:12px;
+  padding:25px 10px;
+}
+@media(max-width:500px){
+  .tools{grid-template-columns:repeat(2,1fr)}
+  .layout{padding:12px}
+  .messages{max-height:50vh}
+  .message{max-width:96%}
+  .brand{font-size:19px}
+}
+</style>
+</head>
+
+<body>
+
+<!-- LOGIN AND REGISTRATION -->
+<section id="authScreen">
+  <div class="auth-card">
+    <div class="logo">ORVEX AI</div>
+    <div class="tagline">Intelligence without boundaries.</div>
+
+    <h2 id="authTitle">Welcome Back</h2>
+
+    <form id="authForm">
+      <input id="nameInput" class="field hidden"
+        type="text" placeholder="Your full name"
+        autocomplete="name">
+
+      <input id="emailInput" class="field"
+        type="email" placeholder="Email address"
+        autocomplete="email" required>
+
+      <input id="passwordInput" class="field"
+        type="password" placeholder="Password"
+        autocomplete="current-password" minlength="6" required>
+
+      <button id="authButton" class="primary" type="submit">
+        Log In
+      </button>
+    </form>
+
+    <div class="auth-switch">
+      <span id="switchText">Don't have an account?</span>
+      <button id="switchAuth" type="button">Create account</button>
+    </div>
+
+    <div id="authNotice" class="notice"></div>
+  </div>
+</section>
+
+<!-- MAIN APPLICATION -->
+<section id="appScreen" class="hidden">
+  <header class="topbar">
+    <div class="brand">ORVEX AI</div>
+    <div class="top-actions">
+      <button class="small-btn" id="newChatBtn">New chat</button>
+      <button class="small-btn" id="logoutBtn">Log out</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <div class="welcome">
+      <h1>Meet <span class="gradient">ORVEX AI</span></h1>
+      <p>Your intelligent assistant for knowledge, research and creativity.</p>
+    </div>
+
+    <div class="tools">
+      <button class="tool active" data-mode="chat">
+        <span>✦</span>AI Chat
+      </button>
+      <button class="tool" data-mode="web_search">
+        <span>🌐</span>Web Search
+      </button>
+      <button class="tool" data-mode="translate">
+        <span>🌍</span>Translate
+      </button>
+      <button class="tool" data-mode="analyze_image">
+        <span>🖼️</span>Analyze Image
+      </button>
+      <button class="tool" data-mode="generate_image">
+        <span>🎨</span>Generate Image
+      </button>
+      <button class="tool" data-mode="edit_image">
+        <span>✨</span>Edit Image
+      </button>
+    </div>
+
+    <section class="chat-panel">
+      <div class="chat-heading" id="modeLabel">
+        ORVEX AI Assistant
+      </div>
+
+      <div class="messages" id="messages">
+        <div class="message ai-message">
+          Hello! I'm ORVEX AI. How can I help you today?
+        </div>
+      </div>
+
+      <form class="composer" id="chatForm">
+        <textarea id="messageInput"
+          placeholder="Message ORVEX AI..."
+          maxlength="12000"></textarea>
+
+        <input id="imageInput" type="file"
+          accept="image/*" class="hidden">
+
+        <div id="filePreview"></div>
+
+        <div class="composer-row">
+          <div class="composer-actions">
+            <button class="action-btn" id="attachBtn" type="button">
+              + Image
+            </button>
+          </div>
+
+          <button class="send-btn" id="sendBtn" type="submit">
+            Send ↑
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <div class="footer">
+      ORVEX AI · Intelligent AI for education, research and global innovation
+      <br><br>
+      Support: orvexai.support@gmail.com
+      <br>
+      Founder: OYETADE MAYOWA AYOMIDE
+    </div>
+  </main>
+</section>
+
+<script>
+"use strict";
+
+/* EXISTING ORVEX FIREBASE PROJECT */
+const firebaseConfig = {
+  apiKey: "AIzaSyD4oCtqtD8U1wnErSP10iu2sIr0XzaqrQs",
+  authDomain: "orvex-ai-f4bb3.firebaseapp.com",
+  projectId: "orvex-ai-f4bb3",
+  storageBucket: "orvex-ai-f4bb3.firebasestorage.app",
+  messagingSenderId: "330308895814",
+  appId: "1:330308895814:web:88c727af7b07ce5fd4b647",
+  measurementId: "G-CZEGRQQ5R4"
+};
+
+firebase.initializeApp(firebaseConfig);
+
+const auth = firebase.auth();
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+
+const $ = (id) => document.getElementById(id);
+
+let isRegistering = false;
+let currentMode = "chat";
+let currentImage = null;
+let conversationHistory = [];
+let currentUser = null;
+let isSending = false;
+
+const modeNames = {
+  chat: "ORVEX AI Assistant",
+  web_search: "ORVEX Web Search",
+  translate: "ORVEX Translator",
+  analyze_image: "Image Analysis",
+  generate_image: "Image Generation",
+  edit_image: "Image Editing"
+};
+
+/* AUTH SCREEN */
+$("switchAuth").addEventListener("click", () => {
+  isRegistering = !isRegistering;
+
+  $("authTitle").textContent =
+    isRegistering ? "Create Your Account" : "Welcome Back";
+
+  $("authButton").textContent =
+    isRegistering ? "Create Account" : "Log In";
+
+  $("nameInput").classList.toggle("hidden", !isRegistering);
+  $("nameInput").required = isRegistering;
+
+  $("passwordInput").autocomplete =
+    isRegistering ? "new-password" : "current-password";
+
+  $("switchText").textContent =
+    isRegistering ? "Already have an account?" : "Don't have an account?";
+
+  $("switchAuth").textContent =
+    isRegistering ? "Log in" : "Create account";
+
+  $("authNotice").textContent = "";
+});
+
+$("authForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const email = $("emailInput").value.trim();
+  const password = $("passwordInput").value;
+  const name = $("nameInput").value.trim();
+
+  $("authButton").disabled = true;
+  $("authNotice").textContent = "Please wait...";
+
+  try {
+    if (isRegistering) {
+      const result = await auth.createUserWithEmailAndPassword(
+        email,
+        password
+      );
+
+      if (name) {
+        await result.user.updateProfile({
+          displayName: name
+        });
+      }
+    } else {
+      await auth.signInWithEmailAndPassword(email, password);
+    }
+  } catch (error) {
+    $("authNotice").textContent = friendlyAuthError(error);
+  } finally {
+    $("authButton").disabled = false;
+  }
+});
+
+function friendlyAuthError(error) {
+  const messages = {
+    "auth/email-already-in-use": "This email already has an account. Please log in.",
+    "auth/invalid-email": "Please enter a valid email address.",
+    "auth/weak-password": "Your password must contain at least 6 characters.",
+    "auth/user-not-found": "No account was found with this email.",
+    "auth/wrong-password": "Incorrect password.",
+    "auth/invalid-credential": "Incorrect email or password.",
+    "auth/too-many-requests": "Too many attempts. Please try again later.",
+    "auth/network-request-failed": "Network error. Check your internet connection."
+  };
+
+  return messages[error.code] || error.message || "Authentication failed.";
+}
+
+/* LOGIN STATE */
+auth.onAuthStateChanged((user) => {
+  currentUser = user;
+
+  if (user) {
+    $("authScreen").classList.add("hidden");
+    $("appScreen").classList.remove("hidden");
+    loadHistory();
+  } else {
+    $("appScreen").classList.add("hidden");
+    $("authScreen").classList.remove("hidden");
+    conversationHistory = [];
+    $("messages").replaceChildren();
+  }
+});
+
+$("logoutBtn").addEventListener("click", async () => {
+  try {
+    await auth.signOut();
+  } catch (error) {
+    alert("Could not log out. Please try again.");
+  }
+});
+
+/* CHAT HISTORY */
+function historyKey() {
+  return "orvex_history_" + currentUser.uid;
+}
+
+function loadHistory() {
+  try {
+    const saved = localStorage.getItem(historyKey());
+    conversationHistory = saved ? JSON.parse(saved) : [];
+
+    if (!Array.isArray(conversationHistory)) {
+      conversationHistory = [];
+    }
+
+    renderHistory();
+  } catch (error) {
+    conversationHistory = [];
+    renderHistory();
+  }
+}
+
+function saveHistory() {
+  try {
+    localStorage.setItem(
+      historyKey(),
+      JSON.stringify(conversationHistory.slice(-40))
+    );
+  } catch (error) {
+    console.warn("Conversation history could not be saved.");
+  }
+}
+
+function renderHistory() {
+  $("messages").replaceChildren();
+
+  if (!conversationHistory.length) {
+    addMessage(
+      "ai",
+      "Hello! I'm ORVEX AI. How can I help you today?"
+    );
+    return;
+  }
+
+  conversationHistory.forEach((item) => {
+    addMessage(item.role === "user" ? "user" : "ai", item.content);
+  });
+}
+
+$("newChatBtn").addEventListener("click", () => {
+  conversationHistory = [];
+  saveHistory();
+  renderHistory();
+  currentImage = null;
+  $("imageInput").value = "";
+  $("filePreview").textContent = "";
+  $("messageInput").value = "";
+});
+
+/* MODE SELECTION */
+document.querySelectorAll(".tool").forEach((button) => {
+  button.addEventListener("click", () => {
+    currentMode = button.dataset.mode;
+
+    document.querySelectorAll(".tool").forEach((item) => {
+      item.classList.toggle("active", item === button);
+    });
+
+    $("modeLabel").textContent = modeNames[currentMode];
+
+    const placeholders = {
+      chat: "Message ORVEX AI...",
+      web_search: "What would you like ORVEX to search for?",
+      translate: "Enter the text you want to translate and the target language...",
+      analyze_image: "Attach an image and ask ORVEX to examine it...",
+      generate_image: "Describe the image you want ORVEX to create...",
+      edit_image: "Attach an image and describe the edits you want..."
+    };
+
+    $("messageInput").placeholder = placeholders[currentMode];
+  });
+});
+
+/* IMAGE ATTACHMENT */
+$("attachBtn").addEventListener("click", () => {
+  $("imageInput").click();
+});
+
+$("imageInput").addEventListener("change", async () => {
+  const file = $("imageInput").files[0];
+
+  currentImage = null;
+  $("filePreview").textContent = "";
+
+  if (!file) return;
+
+  if (!file.type.startsWith("image/")) {
+    $("filePreview").textContent = "Please select an image.";
+    $("imageInput").value = "";
+    return;
+  }
+
+  if (file.size > 5 * 1024 * 1024) {
+    $("filePreview").textContent = "Image must be 5 MB or smaller.";
+    $("imageInput").value = "";
+    return;
+  }
+
+  try {
+    currentImage = await readImageAsDataURL(file);
+    $("filePreview").textContent = "Attached: " + file.name;
+  } catch (error) {
+    $("filePreview").textContent = "Could not read this image.";
+    currentImage = null;
+  }
+});
+
+function readImageAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Image reading failed"));
+
+    reader.readAsDataURL(file);
+  });
+}
+
+/* SAFE MESSAGE DISPLAY */
+function addMessage(role, content, imageUrl = null) {
+  const message = document.createElement("div");
+
+  message.className =
+    "message " + (role === "user" ? "user-message" : "ai-message");
+
+  message.textContent = content || "";
+
+  if (imageUrl && typeof imageUrl === "string") {
+    const image = document.createElement("img");
+    image.src = imageUrl;
+    image.alt = "ORVEX AI generated image";
+    image.loading = "lazy";
+    message.appendChild(image);
+  }
+
+  $("messages").appendChild(message);
+  $("messages").scrollTop = $("messages").scrollHeight;
+}
+
+/* SEND TO ORVEX BACKEND */
+$("chatForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  if (isSending) return;
+
+  if (!currentUser) {
+    addMessage("ai", "Please log in first.");
+    return;
+  }
+
+  const message = $("messageInput").value.trim();
+
+  if (!message && !currentImage) {
+    return;
+  }
+
+  if (
+    (currentMode === "analyze_image" || currentMode === "edit_image") &&
+    !currentImage
+  ) {
+    addMessage("ai", "Please attach an image first.");
+    return;
+  }
+
+  if (currentMode === "generate_image" && !message) {
+    addMessage("ai", "Please describe the image you want to generate.");
+    return;
+  }
+
+  isSending = true;
+  $("sendBtn").disabled = true;
+  $("sendBtn").textContent = "Working...";
+
+  const userText = message || "Please examine this image.";
+
+  addMessage("user", userText);
+
+  if (currentImage) {
+    addMessage("user", "Image attached.");
+  }
+
+  conversationHistory.push({
+    role: "user",
+    content: userText
+  });
+
+  $("messageInput").value = "";
+
+  try {
+    const idToken = await currentUser.getIdToken();
+
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + idToken
+      },
+      body: JSON.stringify({
+        mode: currentMode,
+        message: userText,
+        history: conversationHistory.slice(-20),
+        imageData: currentImage
+      })
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(
+        data.error || data.message ||
+        "ORVEX could not complete your request. Please try again."
+      );
+    }
+
+    const answer =
+      data.reply || data.answer || data.text || "";
+
+    if (typeof answer !== "string" || !answer.trim()) {
+      throw new Error("ORVEX returned an empty response.");
+    }
+
+    addMessage("ai", answer, data.imageUrl || null);
+
+    conversationHistory.push({
+      role: "assistant",
+      content: answer
+    });
+
+    saveHistory();
+
+    currentImage = null;
+    $("imageInput").value = "";
+    $("filePreview").textContent = "";
+
+  } catch (error) {
+    addMessage("ai", "Error: " + error.message);
+
+    // Remove the failed user message from saved conversation history.
+    conversationHistory.pop();
+    saveHistory();
+
+  } finally {
+    isSending = false;
+    $("sendBtn").disabled = false;
+    $("sendBtn").textContent = "Send ↑";
+  }
+});
+</script>
+
+</body>
+  </html>
+  
