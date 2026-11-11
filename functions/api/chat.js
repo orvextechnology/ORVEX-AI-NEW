@@ -470,9 +470,63 @@ export async function onRequestPost({ request, env }) {
 
     let instruction = SYSTEM_PROMPT;
 
+    
+    let webSearchSources = [];
+
     if (mode === "web_search") {
+      if (!env.TAVILY_API_KEY) {
+        return jsonResponse({
+          error: "Web search is not configured. Please check the Tavily API secret."
+        }, 500);
+      }
+
+      const searchResponse = await fetch(
+        "https://api.tavily.com/search",
+        {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${env.TAVILY_API_KEY}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            query: message,
+            search_depth: "fast",
+            topic: "general",
+            max_results: 5,
+            include_answer: false
+          }),
+          signal: AbortSignal.timeout(15000)
+        }
+      );
+
+      const searchData = await searchResponse.json().catch(() => ({}));
+
+      if (!searchResponse.ok) {
+        return jsonResponse({
+          error: searchData?.detail?.error ||
+            "Web search provider could not complete the search."
+        }, searchResponse.status);
+      }
+
+      webSearchSources = (searchData.results || [])
+        .filter(source => source.title && source.url)
+        .slice(0, 5);
+
+      if (!webSearchSources.length) {
+        return jsonResponse({
+          error: "No search results were found. Try another search."
+        }, 404);
+      }
+
+      const searchContext = webSearchSources.map((source, index) =>
+        `SOURCE ${index + 1}\nTitle: ${source.title}\nURL: ${source.url}\nContent: ${(source.content || "").slice(0, 1500)}`
+      ).join("\n\n");
+
       instruction +=
-        " Research the user's question using Google Search. Include source citations where available.";
+        "\nUse the following live web search results to answer the user's question. " +
+        "Write a professional, well-structured answer with headings where useful. " +
+        "Do not invent facts. Cite claims using the supplied source titles and URLs.\n\n" +
+        "WEB SEARCH RESULTS:\n" + searchContext;
     }
 
     if (mode === "translate") {
@@ -499,12 +553,6 @@ export async function onRequestPost({ request, env }) {
         max_output_tokens: 1200
       }
     };
-
-    if (mode === "web_search") {
-      requestBody.tools = [{
-        type: "google_search"
-      }];
-    }
 
     const result = await callTextModelWithFallback(
       env.ORVEX_GEMINI_KEY,
@@ -543,13 +591,9 @@ export async function onRequestPost({ request, env }) {
       }, 502);
     }
 
-    const sources = mode === "web_search"
-      ? extractInteractionSources(data)
-      : [];
-
-    const replyWithSources = sources.length
+    const replyWithSources = webSearchSources.length
       ? reply + "\n\nSources:\n" +
-        sources.map((source, index) =>
+        webSearchSources.map((source, index) =>
           `${index + 1}. ${source.title}\n${source.url}`
         ).join("\n")
       : reply;
@@ -561,6 +605,7 @@ export async function onRequestPost({ request, env }) {
   } catch (error) {
     const isTimeout =
       error?.name === "AbortError" ||
+      error?.name === "TimeoutError" ||
       /timed out|took too long/i.test(error?.message || "");
 
     return jsonResponse({
@@ -568,6 +613,5 @@ export async function onRequestPost({ request, env }) {
         ? "The AI service timed out. Please try again."
         : error?.message || "An unexpected server error occurred."
     }, isTimeout ? 504 : 500);
-  }
-      }
-      
+    }
+          
