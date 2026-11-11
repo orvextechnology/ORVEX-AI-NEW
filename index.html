@@ -10,6 +10,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 
 <style>
 :root {
@@ -33,6 +34,7 @@ body{
 }
 button,input,textarea,select{font:inherit}
 button{cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
 .hidden{display:none!important}
 
 /* AUTH */
@@ -90,7 +92,6 @@ button{cursor:pointer}
   font-weight:bold;
   background:linear-gradient(100deg,var(--purple),#526de9);
 }
-.primary:disabled{opacity:.5;cursor:not-allowed}
 .auth-switch{
   text-align:center;
   color:var(--muted);
@@ -115,11 +116,12 @@ button{cursor:pointer}
 /* APP */
 #appScreen{min-height:100vh}
 .topbar{
-  height:65px;
+  min-height:65px;
   display:flex;
   align-items:center;
   justify-content:space-between;
-  padding:0 18px;
+  gap:10px;
+  padding:10px 18px;
   border-bottom:1px solid var(--border);
   background:#0d1122;
   position:sticky;
@@ -175,6 +177,54 @@ button{cursor:pointer}
   background:#211b43;
 }
 .tool span{display:block;font-size:22px;margin-bottom:7px}
+
+/* CHAT HISTORY */
+.history-panel{
+  border:1px solid var(--border);
+  background:var(--panel);
+  border-radius:15px;
+  padding:14px;
+  margin:18px 0;
+}
+.history-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:12px;
+}
+.history-heading strong{font-size:14px}
+.history-status{
+  color:var(--muted);
+  font-size:11px;
+}
+.history-list{
+  display:flex;
+  flex-direction:column;
+  gap:7px;
+  max-height:230px;
+  overflow-y:auto;
+}
+.history-item{
+  width:100%;
+  text-align:left;
+  border:1px solid var(--border);
+  background:#0c1122;
+  color:var(--text);
+  padding:11px 12px;
+  border-radius:10px;
+  font-size:13px;
+  overflow-wrap:anywhere;
+}
+.history-item.active{
+  border-color:var(--purple);
+  background:#211b43;
+}
+.history-empty{
+  color:var(--muted);
+  font-size:12px;
+  padding:8px 2px;
+}
 .chat-panel{
   border:1px solid var(--border);
   background:var(--panel);
@@ -273,6 +323,8 @@ button{cursor:pointer}
   .messages{max-height:50vh}
   .message{max-width:96%}
   .brand{font-size:19px}
+  .topbar{padding:10px}
+  .small-btn{padding:8px 9px;font-size:12px}
 }
 </style>
 </head>
@@ -319,7 +371,7 @@ button{cursor:pointer}
   <header class="topbar">
     <div class="brand">ORVEX AI</div>
     <div class="top-actions">
-      <button class="small-btn" id="newChatBtn">New chat</button>
+      <button class="small-btn" id="newChatBtn">+ New chat</button>
       <button class="small-btn" id="logoutBtn">Log out</button>
     </div>
   </header>
@@ -350,6 +402,16 @@ button{cursor:pointer}
         <span>✨</span>Edit Image
       </button>
     </div>
+
+    <section class="history-panel">
+      <div class="history-heading">
+        <strong>Chat history</strong>
+        <span class="history-status" id="historyStatus">Loading conversations...</span>
+      </div>
+      <div class="history-list" id="historyList">
+        <div class="history-empty">Loading your saved conversations...</div>
+      </div>
+    </section>
 
     <section class="chat-panel">
       <div class="chat-heading" id="modeLabel">
@@ -413,6 +475,8 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 
 const auth = firebase.auth();
+const db = firebase.firestore();
+
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
 
 const $ = (id) => document.getElementById(id);
@@ -422,7 +486,10 @@ let currentMode = "chat";
 let currentImage = null;
 let conversationHistory = [];
 let currentUser = null;
+let currentConversationId = null;
 let isSending = false;
+let isLoadingChats = false;
+let conversationList = [];
 
 const modeNames = {
   chat: "ORVEX AI Assistant",
@@ -432,6 +499,48 @@ const modeNames = {
   generate_image: "Image Generation",
   edit_image: "Image Editing"
 };
+
+/* FIRESTORE CHAT COLLECTION */
+function userChatsCollection() {
+  if (!currentUser) {
+    throw new Error("Please log in first.");
+  }
+
+  return db.collection("users")
+    .doc(currentUser.uid)
+    .collection("chats");
+}
+
+function localHistoryKey() {
+  return "orvex_history_" + currentUser.uid;
+}
+
+function makeChatTitle(messages) {
+  const firstUserMessage = messages.find(
+    item => item.role === "user" && item.content
+  );
+
+  if (!firstUserMessage) return "New conversation";
+
+  const title = String(firstUserMessage.content)
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return title.length > 55
+    ? title.slice(0, 55) + "..."
+    : title;
+}
+
+function cleanMessages(messages) {
+  return messages.slice(-60).map(item => ({
+    role: item.role === "user" ? "user" : "assistant",
+    content: String(item.content || ""),
+    ...(typeof item.imageUrl === "string" &&
+       item.imageUrl.startsWith("https://")
+       ? { imageUrl: item.imageUrl }
+       : {})
+  }));
+}
 
 /* AUTH SCREEN */
 $("switchAuth").addEventListener("click", () => {
@@ -506,18 +615,29 @@ function friendlyAuthError(error) {
 }
 
 /* LOGIN STATE */
-auth.onAuthStateChanged((user) => {
+auth.onAuthStateChanged(async (user) => {
   currentUser = user;
 
   if (user) {
     $("authScreen").classList.add("hidden");
     $("appScreen").classList.remove("hidden");
-    loadHistory();
+
+    conversationHistory = [];
+    currentConversationId = null;
+    conversationList = [];
+    renderHistory();
+
+    await loadCloudHistory();
   } else {
     $("appScreen").classList.add("hidden");
     $("authScreen").classList.remove("hidden");
+
     conversationHistory = [];
+    currentConversationId = null;
+    conversationList = [];
     $("messages").replaceChildren();
+    $("historyList").replaceChildren();
+    $("historyStatus").textContent = "";
   }
 });
 
@@ -529,62 +649,187 @@ $("logoutBtn").addEventListener("click", async () => {
   }
 });
 
-/* CHAT HISTORY */
-function historyKey() {
-  return "orvex_history_" + currentUser.uid;
-}
+/* MIGRATE THE OLD PHONE-SAVED CHAT ONCE */
+async function migrateOldHistory() {
+  if (!currentUser) return;
 
-function loadHistory() {
+  const legacyKey = localHistoryKey();
+  const oldData = localStorage.getItem(legacyKey);
+
+  if (!oldData) return;
+
+  let oldMessages;
+
   try {
-    const saved = localStorage.getItem(historyKey());
-    conversationHistory = saved ? JSON.parse(saved) : [];
-
-    if (!Array.isArray(conversationHistory)) {
-      conversationHistory = [];
-    }
-
-    renderHistory();
+    oldMessages = JSON.parse(oldData);
   } catch (error) {
-    conversationHistory = [];
-    renderHistory();
-  }
-}
-
-function saveHistory() {
-  try {
-    localStorage.setItem(
-      historyKey(),
-      JSON.stringify(conversationHistory.slice(-40))
-    );
-  } catch (error) {
-    console.warn("Conversation history could not be saved.");
-  }
-}
-
-function renderHistory() {
-  $("messages").replaceChildren();
-
-  if (!conversationHistory.length) {
-    addMessage(
-      "ai",
-      "Hello! I'm ORVEX AI. How can I help you today?"
-    );
+    console.warn("Old local chat history could not be read.");
     return;
   }
 
-  conversationHistory.forEach((item) => {
-    addMessage(item.role === "user" ? "user" : "ai", item.content);
+  if (!Array.isArray(oldMessages) || oldMessages.length === 0) {
+    return;
+  }
+
+  const legacyDoc = userChatsCollection().doc("legacy_" + currentUser.uid);
+  const existingLegacy = await legacyDoc.get();
+
+  if (existingLegacy.exists) return;
+
+  const messages = cleanMessages(oldMessages);
+
+  await legacyDoc.set({
+    title: makeChatTitle(messages),
+    messages: messages,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   });
 }
 
+/* LOAD ALL SAVED CONVERSATIONS */
+async function loadCloudHistory() {
+  if (!currentUser || isLoadingChats) return;
+
+  isLoadingChats = true;
+  $("historyStatus").textContent = "Loading conversations...";
+  $("historyList").innerHTML =
+    '<div class="history-empty">Loading your saved conversations...</div>';
+
+  try {
+    await migrateOldHistory();
+
+    const snapshot = await userChatsCollection()
+      .orderBy("updatedAt", "desc")
+      .limit(50)
+      .get();
+
+    conversationList = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    renderConversationList();
+
+    $("historyStatus").textContent =
+      conversationList.length + " saved";
+
+  } catch (error) {
+    console.error("Chat history loading failed:", error);
+    $("historyStatus").textContent = "Could not load history";
+    $("historyList").innerHTML =
+      '<div class="history-empty">Could not load saved conversations. Check your internet connection and Firestore rules.</div>';
+  } finally {
+    isLoadingChats = false;
+  }
+}
+
+function renderConversationList() {
+  const list = $("historyList");
+  list.replaceChildren();
+
+  if (!conversationList.length) {
+    const empty = document.createElement("div");
+    empty.className = "history-empty";
+    empty.textContent = "Your saved conversations will appear here.";
+    list.appendChild(empty);
+    return;
+  }
+
+  conversationList.forEach(chat => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "history-item";
+
+    if (chat.id === currentConversationId) {
+      button.classList.add("active");
+    }
+
+    button.textContent = chat.title || "Saved conversation";
+
+    button.addEventListener("click", () => {
+      openConversation(chat.id);
+    });
+
+    list.appendChild(button);
+  });
+}
+
+/* OPEN A PREVIOUS CONVERSATION */
+async function openConversation(chatId) {
+  if (!currentUser || isSending) return;
+
+  $("historyStatus").textContent = "Opening conversation...";
+
+  try {
+    const snapshot = await userChatsCollection().doc(chatId).get();
+
+    if (!snapshot.exists) {
+      throw new Error("This conversation no longer exists.");
+    }
+
+    const data = snapshot.data();
+
+    currentConversationId = chatId;
+    conversationHistory = Array.isArray(data.messages)
+      ? cleanMessages(data.messages)
+      : [];
+
+    renderHistory();
+    renderConversationList();
+
+    $("historyStatus").textContent =
+      conversationList.length + " saved";
+
+    $("messageInput").value = "";
+    currentImage = null;
+    $("imageInput").value = "";
+    $("filePreview").textContent = "";
+
+  } catch (error) {
+    $("historyStatus").textContent = "Could not open chat";
+    alert(error.message || "Could not open this conversation.");
+  }
+}
+
+/* SAVE CONVERSATION TO FIRESTORE */
+async function saveConversation() {
+  if (!currentUser || !conversationHistory.length) return;
+
+  const messages = cleanMessages(conversationHistory);
+
+  if (!currentConversationId) {
+    currentConversationId = userChatsCollection().doc().id;
+  }
+
+  const chatRef = userChatsCollection().doc(currentConversationId);
+
+  await chatRef.set({
+    title: makeChatTitle(messages),
+    messages: messages,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+
+  $("historyStatus").textContent = "Saved to your account";
+
+  await loadCloudHistory();
+}
+
+/* NEW CHAT — OLD CHATS REMAIN SAVED */
 $("newChatBtn").addEventListener("click", () => {
+  if (isSending) return;
+
   conversationHistory = [];
-  saveHistory();
+  currentConversationId = null;
+
   renderHistory();
+  renderConversationList();
+
+  $("messageInput").value = "";
   currentImage = null;
   $("imageInput").value = "";
   $("filePreview").textContent = "";
-  $("messageInput").value = "";
+  $("historyStatus").textContent = "New conversation";
 });
 
 /* MODE SELECTION */
@@ -606,7 +851,6 @@ document.querySelectorAll(".tool").forEach((button) => {
       generate_image: "Describe the image you want ORVEX to create...",
       edit_image: "Attach an image and describe the edits you want..."
     };
-
     $("messageInput").placeholder = placeholders[currentMode];
   });
 });
@@ -644,8 +888,7 @@ $("imageInput").addEventListener("change", async () => {
     currentImage = null;
   }
 });
-
-function readImageAsDataURL(file) {
+  function readImageAsDataURL(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -677,6 +920,26 @@ function addMessage(role, content, imageUrl = null) {
   $("messages").scrollTop = $("messages").scrollHeight;
 }
 
+function renderHistory() {
+  $("messages").replaceChildren();
+
+  if (!conversationHistory.length) {
+    addMessage(
+      "ai",
+      "Hello! I'm ORVEX AI. How can I help you today?"
+    );
+    return;
+    }
+
+  conversationHistory.forEach(item => {
+    addMessage(
+      item.role === "user" ? "user" : "ai",
+      item.content,
+      item.imageUrl || null
+    );
+  });
+}
+
 /* SEND TO ORVEX BACKEND */
 $("chatForm").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -690,9 +953,7 @@ $("chatForm").addEventListener("submit", async (event) => {
 
   const message = $("messageInput").value.trim();
 
-  if (!message && !currentImage) {
-    return;
-  }
+  if (!message && !currentImage) return;
 
   if (
     (currentMode === "analyze_image" || currentMode === "edit_image") &&
@@ -706,49 +967,47 @@ $("chatForm").addEventListener("submit", async (event) => {
     addMessage("ai", "Please describe the image you want to generate.");
     return;
   }
-
   isSending = true;
   $("sendBtn").disabled = true;
+  $("newChatBtn").disabled = true;
   $("sendBtn").textContent = "Working...";
 
   const userText = message || "Please examine this image.";
+  const imageForRequest = currentImage;
 
   addMessage("user", userText);
 
-  if (currentImage) {
+  if (imageForRequest) {
     addMessage("user", "Image attached.");
   }
 
-  conversationHistory.push({
-    role: "user",
-    content: userText
-  });
-
   $("messageInput").value = "";
+
+  const requestHistory = [
+    ...conversationHistory,
+    { role: "user", content: userText }
+  ].slice(-20);
 
   try {
     const idToken = await currentUser.getIdToken();
 
-    
-const response = await fetch("/api/chat", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer " + idToken
-  },
-  body: JSON.stringify({
-    mode: currentMode,
-    message: userText,
-    history: conversationHistory.slice(-20),
-    imageData: currentImage
-  }),
-  signal: AbortSignal.timeout(65000)
-});
-    
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + idToken
+      },
+      body: JSON.stringify({
+        mode: currentMode,
+        message: userText,
+        history: requestHistory,
+        imageData: imageForRequest
+      }),
+      signal: AbortSignal.timeout(65000)
+    });
 
     const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
+     if (!response.ok) {
       throw new Error(
         data.error || data.message ||
         "ORVEX could not complete your request. Please try again."
@@ -762,14 +1021,34 @@ const response = await fetch("/api/chat", {
       throw new Error("ORVEX returned an empty response.");
     }
 
-    addMessage("ai", answer, data.imageUrl || null);
+    const generatedImage =
+      typeof data.imageUrl === "string" ? data.imageUrl : null;
+
+    addMessage("ai", answer, generatedImage);
+
+    conversationHistory.push({
+      role: "user",
+      content: userText
+    });
 
     conversationHistory.push({
       role: "assistant",
-      content: answer
+      content: answer,
+      ...(generatedImage && generatedImage.startsWith("https://")
+        ? { imageUrl: generatedImage }
+        : {})
     });
 
-    saveHistory();
+    try {
+      await saveConversation();
+    } catch (saveError) {
+      console.error("Cloud chat save failed:", saveError);
+      $("historyStatus").textContent = "Reply received; cloud save failed";
+      addMessage(
+        "ai",
+        "Your reply was received, but this conversation could not be saved to your account. Please check your internet connection and Firestore permissions."
+      );
+      }
 
     currentImage = null;
     $("imageInput").value = "";
@@ -777,19 +1056,14 @@ const response = await fetch("/api/chat", {
 
   } catch (error) {
     addMessage("ai", "Error: " + error.message);
-
-    // Remove the failed user message from saved conversation history.
-    conversationHistory.pop();
-    saveHistory();
-
   } finally {
     isSending = false;
     $("sendBtn").disabled = false;
+    $("newChatBtn").disabled = false;
     $("sendBtn").textContent = "Send ↑";
   }
 });
 </script>
 
 </body>
-  </html>
-  
+</html>
