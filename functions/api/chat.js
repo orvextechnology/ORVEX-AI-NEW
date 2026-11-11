@@ -468,10 +468,8 @@ export async function onRequestPost({ request, env }) {
       return jsonResponse(result);
     }
 
-    let instruction = SYSTEM_PROMPT;
-
     
-    let webSearchSources = [];
+    let instruction = SYSTEM_PROMPT;
 
     if (mode === "web_search") {
       if (!env.TAVILY_API_KEY) {
@@ -508,11 +506,11 @@ export async function onRequestPost({ request, env }) {
         }, searchResponse.status);
       }
 
-      webSearchSources = (searchData.results || [])
+      const sources = (searchData.results || [])
         .filter(source => source.title && source.url)
         .slice(0, 5);
 
-      if (!webSearchSources.length) {
+      if (!sources.length) {
         return jsonResponse({
           error: "No search results were found. Try another search."
         }, 404);
@@ -520,7 +518,7 @@ export async function onRequestPost({ request, env }) {
 
       const searchReply =
         "## Web Search Results\n\n" +
-        webSearchSources.map((source, index) =>
+        sources.map((source, index) =>
           `### ${index + 1}. ${source.title}\n\n` +
           `${source.content || "Open the source to read more."}\n\n` +
           `Source: ${source.url}`
@@ -529,16 +527,6 @@ export async function onRequestPost({ request, env }) {
       return jsonResponse({
         reply: searchReply
       });
-        
-      const searchContext = webSearchSources.map((source, index) =>
-        `SOURCE ${index + 1}\nTitle: ${source.title}\nURL: ${source.url}\nContent: ${(source.content || "").slice(0, 1500)}`
-      ).join("\n\n");
-
-      instruction +=
-        "\nUse the following live web search results to answer the user's question. " +
-        "Write a professional, well-structured answer with headings where useful. " +
-        "Do not invent facts. Cite claims using the supplied source titles and URLs.\n\n" +
-        "WEB SEARCH RESULTS:\n" + searchContext;
     }
 
     if (mode === "translate") {
@@ -603,15 +591,8 @@ export async function onRequestPost({ request, env }) {
       }, 502);
     }
 
-    const replyWithSources = webSearchSources.length
-      ? reply + "\n\nSources:\n" +
-        webSearchSources.map((source, index) =>
-          `${index + 1}. ${source.title}\n${source.url}`
-        ).join("\n")
-      : reply;
-
     return jsonResponse({
-      reply: replyWithSources
+      reply
     });
 
   } catch (error) {
@@ -625,5 +606,7 @@ export async function onRequestPost({ request, env }) {
         ? "The AI service timed out. Please try again."
         : error?.message || "An unexpected server error occurred."
     }, isTimeout ? 504 : 500);
-    }
+  }
+  }
+        
           
