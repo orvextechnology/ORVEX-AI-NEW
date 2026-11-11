@@ -5,15 +5,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#090b18">
+<meta name="description" content="ORVEX AI — intelligent chat, research, translation and image tools.">
 <title>ORVEX AI — Intelligent AI Platform</title>
-<meta name="description" content="ORVEX AI is an intelligent platform for AI chat, web search, translation, image understanding and productivity.">
+
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/icons/orvex.svg">
+<link rel="apple-touch-icon" href="/icons/orvex.svg">
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 
 <style>
-:root {
+:root{
   --bg:#090b18;
   --panel:#11162a;
   --panel2:#171e35;
@@ -27,15 +31,46 @@
 *{box-sizing:border-box}
 body{
   margin:0;
-  font-family:Arial,sans-serif;
+  font-family:Arial,Helvetica,sans-serif;
   background:var(--bg);
   color:var(--text);
   min-height:100vh;
 }
-button,input,textarea,select{font:inherit}
+button,input,textarea{font:inherit}
 button{cursor:pointer}
 button:disabled{opacity:.5;cursor:not-allowed}
 .hidden{display:none!important}
+
+/* BRAND */
+.logo-image{
+  width:76px;
+  height:76px;
+  object-fit:contain;
+  display:block;
+  margin:0 auto 12px;
+  filter:drop-shadow(0 0 16px #805cff55);
+}
+.brand-wrap{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+.brand-icon{
+  width:38px;
+  height:38px;
+  object-fit:contain;
+  flex-shrink:0;
+}
+.brand{
+  font-size:21px;
+  font-weight:900;
+  letter-spacing:2px;
+  background:linear-gradient(90deg,var(--purple),var(--cyan));
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+}
 
 /* AUTH */
 #authScreen{
@@ -55,15 +90,6 @@ button:disabled{opacity:.5;cursor:not-allowed}
   border-radius:22px;
   box-shadow:0 20px 70px #0008;
 }
-.logo{
-  text-align:center;
-  font-size:34px;
-  font-weight:900;
-  letter-spacing:3px;
-  background:linear-gradient(90deg,var(--purple),var(--cyan));
-  -webkit-background-clip:text;
-  color:transparent;
-}
 .tagline{
   text-align:center;
   color:var(--muted);
@@ -81,7 +107,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
   color:white;
   outline:none;
 }
-.field:focus{border-color:var(--purple)}
+.field:focus,#messageInput:focus{border-color:var(--purple)}
 .primary{
   width:100%;
   padding:14px;
@@ -128,14 +154,6 @@ button:disabled{opacity:.5;cursor:not-allowed}
   top:0;
   z-index:5;
 }
-.brand{
-  font-size:22px;
-  font-weight:900;
-  letter-spacing:2px;
-  background:linear-gradient(90deg,var(--purple),var(--cyan));
-  -webkit-background-clip:text;
-  color:transparent;
-}
 .top-actions{display:flex;gap:8px;align-items:center}
 .small-btn{
   border:1px solid var(--border);
@@ -154,6 +172,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .gradient{
   background:linear-gradient(90deg,var(--purple),var(--cyan));
   -webkit-background-clip:text;
+  background-clip:text;
   color:transparent;
 }
 .welcome p{color:var(--muted);font-size:14px}
@@ -194,10 +213,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
   margin-bottom:12px;
 }
 .history-heading strong{font-size:14px}
-.history-status{
-  color:var(--muted);
-  font-size:11px;
-}
+.history-status{color:var(--muted);font-size:11px}
 .history-list{
   display:flex;
   flex-direction:column;
@@ -220,11 +236,9 @@ button:disabled{opacity:.5;cursor:not-allowed}
   border-color:var(--purple);
   background:#211b43;
 }
-.history-empty{
-  color:var(--muted);
-  font-size:12px;
-  padding:8px 2px;
-}
+.history-empty{color:var(--muted);font-size:12px;padding:8px 2px}
+
+/* CHAT */
 .chat-panel{
   border:1px solid var(--border);
   background:var(--panel);
@@ -244,28 +258,97 @@ button:disabled{opacity:.5;cursor:not-allowed}
   padding:16px;
 }
 .message{
-  max-width:90%;
-  padding:13px 15px;
-  border-radius:14px;
-  margin:10px 0;
-  line-height:1.6;
+  max-width:94%;
+  padding:15px 17px;
+  border-radius:15px;
+  margin:12px 0;
+  line-height:1.75;
   font-size:14px;
-  white-space:pre-wrap;
   overflow-wrap:anywhere;
 }
 .user-message{
   background:#29224e;
   margin-left:auto;
+  white-space:pre-wrap;
 }
 .ai-message{
   background:var(--panel2);
   border:1px solid var(--border);
   margin-right:auto;
 }
-.message img{
-  max-width:100%;
+.ai-message-content{min-width:0}
+.ai-message-top{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:var(--cyan);
+  font-size:11px;
+  font-weight:bold;
+  letter-spacing:.7px;
+  margin-bottom:12px;
+}
+.ai-message-top img{
+  width:23px;
+  height:23px;
+  object-fit:contain;
+}
+.answer-body{line-height:1.8}
+.answer-body p{margin:0 0 14px}
+.answer-body p:last-child{margin-bottom:0}
+.answer-body h1,.answer-body h2,.answer-body h3{
+  color:#fff;
+  line-height:1.35;
+  margin:22px 0 11px;
+}
+.answer-body h1{font-size:22px}
+.answer-body h2{
+  font-size:19px;
+  border-bottom:1px solid var(--border);
+  padding-bottom:8px;
+}
+.answer-body h3{font-size:16px;color:#b9a8ff}
+.answer-body strong{color:#fff;font-weight:800}
+.answer-body em{color:#d6d2ff}
+.answer-body ul,.answer-body ol{
+  padding-left:24px;
+  margin:8px 0 17px;
+}
+.answer-body li{padding-left:4px;margin:7px 0}
+.answer-body blockquote{
+  margin:14px 0;
+  padding:10px 14px;
+  border-left:3px solid var(--purple);
+  background:#10172b;
+  color:#c6cce4;
+  border-radius:5px;
+}
+.answer-body code{
+  background:#090e20;
+  color:#7de8fa;
+  padding:2px 6px;
+  border-radius:5px;
+  font-family:monospace;
+  font-size:13px;
+}
+.answer-body pre{
+  background:#090e20;
+  border:1px solid var(--border);
+  padding:13px;
   border-radius:10px;
-  margin-top:10px;
+  overflow-x:auto;
+  white-space:pre-wrap;
+}
+.answer-body pre code{padding:0;background:none}
+.answer-body hr{
+  border:0;
+  border-top:1px solid var(--border);
+  margin:18px 0;
+}
+.message img.generated-image{
+  display:block;
+  max-width:100%;
+  border-radius:12px;
+  margin-top:12px;
 }
 .composer{
   padding:14px;
@@ -321,55 +404,53 @@ button:disabled{opacity:.5;cursor:not-allowed}
   .tools{grid-template-columns:repeat(2,1fr)}
   .layout{padding:12px}
   .messages{max-height:50vh}
-  .message{max-width:96%}
-  .brand{font-size:19px}
+  .message{max-width:98%}
+  .brand{font-size:17px}
+  .brand-icon{width:32px;height:32px}
   .topbar{padding:10px}
   .small-btn{padding:8px 9px;font-size:12px}
+  .auth-card{padding:25px 18px}
 }
 </style>
 </head>
 
 <body>
 
-<!-- LOGIN AND REGISTRATION -->
 <section id="authScreen">
   <div class="auth-card">
-    <div class="logo">ORVEX AI</div>
+    <img class="logo-image" src="/icons/orvex.svg" alt="ORVEX AI logo">
     <div class="tagline">Intelligence without boundaries.</div>
 
     <h2 id="authTitle">Welcome Back</h2>
 
     <form id="authForm">
-      <input id="nameInput" class="field hidden"
-        type="text" placeholder="Your full name"
-        autocomplete="name">
+      <input id="nameInput" class="field hidden" type="text"
+        placeholder="Your full name" autocomplete="name">
 
-      <input id="emailInput" class="field"
-        type="email" placeholder="Email address"
-        autocomplete="email" required>
+      <input id="emailInput" class="field" type="email"
+        placeholder="Email address" autocomplete="email" required>
 
-      <input id="passwordInput" class="field"
-        type="password" placeholder="Password"
-        autocomplete="current-password" minlength="6" required>
+      <input id="passwordInput" class="field" type="password"
+        placeholder="Password" autocomplete="current-password"
+        minlength="6" required>
 
-      <button id="authButton" class="primary" type="submit">
-        Log In
-      </button>
+      <button id="authButton" class="primary" type="submit">Log In</button>
     </form>
 
     <div class="auth-switch">
       <span id="switchText">Don't have an account?</span>
       <button id="switchAuth" type="button">Create account</button>
     </div>
-
     <div id="authNotice" class="notice"></div>
   </div>
 </section>
 
-<!-- MAIN APPLICATION -->
 <section id="appScreen" class="hidden">
   <header class="topbar">
-    <div class="brand">ORVEX AI</div>
+    <div class="brand-wrap">
+      <img class="brand-icon" src="/icons/orvex.svg" alt="ORVEX logo">
+      <div class="brand">ORVEX AI</div>
+    </div>
     <div class="top-actions">
       <button class="small-btn" id="newChatBtn">+ New chat</button>
       <button class="small-btn" id="logoutBtn">Log out</button>
@@ -383,24 +464,12 @@ button:disabled{opacity:.5;cursor:not-allowed}
     </div>
 
     <div class="tools">
-      <button class="tool active" data-mode="chat">
-        <span>✦</span>AI Chat
-      </button>
-      <button class="tool" data-mode="web_search">
-        <span>🌐</span>Web Search
-      </button>
-      <button class="tool" data-mode="translate">
-        <span>🌍</span>Translate
-      </button>
-      <button class="tool" data-mode="analyze_image">
-        <span>🖼️</span>Analyze Image
-      </button>
-      <button class="tool" data-mode="generate_image">
-        <span>🎨</span>Generate Image
-      </button>
-      <button class="tool" data-mode="edit_image">
-        <span>✨</span>Edit Image
-      </button>
+      <button class="tool active" data-mode="chat"><span>✦</span>AI Chat</button>
+      <button class="tool" data-mode="web_search"><span>🌐</span>Web Search</button>
+      <button class="tool" data-mode="translate"><span>🌍</span>Translate</button>
+      <button class="tool" data-mode="analyze_image"><span>🖼️</span>Analyze Image</button>
+      <button class="tool" data-mode="generate_image"><span>🎨</span>Generate Image</button>
+      <button class="tool" data-mode="edit_image"><span>✨</span>Edit Image</button>
     </div>
 
     <section class="history-panel">
@@ -414,9 +483,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
     </section>
 
     <section class="chat-panel">
-      <div class="chat-heading" id="modeLabel">
-        ORVEX AI Assistant
-      </div>
+      <div class="chat-heading" id="modeLabel">ORVEX AI Assistant</div>
 
       <div class="messages" id="messages">
         <div class="message ai-message">
@@ -425,25 +492,17 @@ button:disabled{opacity:.5;cursor:not-allowed}
       </div>
 
       <form class="composer" id="chatForm">
-        <textarea id="messageInput"
-          placeholder="Message ORVEX AI..."
+        <textarea id="messageInput" placeholder="Message ORVEX AI..."
           maxlength="12000"></textarea>
 
-        <input id="imageInput" type="file"
-          accept="image/*" class="hidden">
-
+        <input id="imageInput" type="file" accept="image/*" class="hidden">
         <div id="filePreview"></div>
 
         <div class="composer-row">
           <div class="composer-actions">
-            <button class="action-btn" id="attachBtn" type="button">
-              + Image
-            </button>
+            <button class="action-btn" id="attachBtn" type="button">+ Image</button>
           </div>
-
-          <button class="send-btn" id="sendBtn" type="submit">
-            Send ↑
-          </button>
+          <button class="send-btn" id="sendBtn" type="submit">Send ↑</button>
         </div>
       </form>
     </section>
@@ -461,7 +520,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <script>
 "use strict";
 
-/* EXISTING ORVEX FIREBASE PROJECT */
+/* FIREBASE PROJECT — KEEPING YOUR EXISTING ACCOUNT SYSTEM */
 const firebaseConfig = {
   apiKey: "AIzaSyD4oCtqtD8U1wnErSP10iu2sIr0XzaqrQs",
   authDomain: "orvex-ai-f4bb3.firebaseapp.com",
@@ -479,7 +538,7 @@ const db = firebase.firestore();
 
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
 
-const $ = (id) => document.getElementById(id);
+const $ = id => document.getElementById(id);
 
 let isRegistering = false;
 let currentMode = "chat";
@@ -492,84 +551,55 @@ let isLoadingChats = false;
 let conversationList = [];
 
 const modeNames = {
-  chat: "ORVEX AI Assistant",
-  web_search: "ORVEX Web Search",
-  translate: "ORVEX Translator",
-  analyze_image: "Image Analysis",
-  generate_image: "Image Generation",
-  edit_image: "Image Editing"
+  chat:"ORVEX AI Assistant",
+  web_search:"ORVEX Web Search",
+  translate:"ORVEX Translator",
+  analyze_image:"Image Analysis",
+  generate_image:"Image Generation",
+  edit_image:"Image Editing"
 };
 
-/* FIRESTORE CHAT COLLECTION */
-function userChatsCollection() {
-  if (!currentUser) {
-    throw new Error("Please log in first.");
-  }
-
-  return db.collection("users")
-    .doc(currentUser.uid)
-    .collection("chats");
+function userChatsCollection(){
+  if(!currentUser) throw new Error("Please log in first.");
+  return db.collection("users").doc(currentUser.uid).collection("chats");
 }
 
-function localHistoryKey() {
+function localHistoryKey(){
   return "orvex_history_" + currentUser.uid;
 }
 
-function makeChatTitle(messages) {
-  const firstUserMessage = messages.find(
-    item => item.role === "user" && item.content
-  );
-
-  if (!firstUserMessage) return "New conversation";
-
-  const title = String(firstUserMessage.content)
-    .replace(/\s+/g, " ")
-    .trim();
-
-  return title.length > 55
-    ? title.slice(0, 55) + "..."
-    : title;
+function makeChatTitle(messages){
+  const first = messages.find(item => item.role === "user" && item.content);
+  if(!first) return "New conversation";
+  const title = String(first.content).replace(/\s+/g," ").trim();
+  return title.length > 55 ? title.slice(0,55) + "..." : title;
 }
 
-function cleanMessages(messages) {
+function cleanMessages(messages){
   return messages.slice(-60).map(item => ({
-    role: item.role === "user" ? "user" : "assistant",
-    content: String(item.content || ""),
+    role:item.role === "user" ? "user" : "assistant",
+    content:String(item.content || ""),
     ...(typeof item.imageUrl === "string" &&
        item.imageUrl.startsWith("https://")
-       ? { imageUrl: item.imageUrl }
-       : {})
+       ? {imageUrl:item.imageUrl} : {})
   }));
 }
 
-/* AUTH SCREEN */
-$("switchAuth").addEventListener("click", () => {
+/* AUTHENTICATION */
+$("switchAuth").addEventListener("click",()=>{
   isRegistering = !isRegistering;
-
-  $("authTitle").textContent =
-    isRegistering ? "Create Your Account" : "Welcome Back";
-
-  $("authButton").textContent =
-    isRegistering ? "Create Account" : "Log In";
-
-  $("nameInput").classList.toggle("hidden", !isRegistering);
+  $("authTitle").textContent = isRegistering ? "Create Your Account" : "Welcome Back";
+  $("authButton").textContent = isRegistering ? "Create Account" : "Log In";
+  $("nameInput").classList.toggle("hidden",!isRegistering);
   $("nameInput").required = isRegistering;
-
-  $("passwordInput").autocomplete =
-    isRegistering ? "new-password" : "current-password";
-
-  $("switchText").textContent =
-    isRegistering ? "Already have an account?" : "Don't have an account?";
-
-  $("switchAuth").textContent =
-    isRegistering ? "Log in" : "Create account";
-
+  $("passwordInput").autocomplete = isRegistering ? "new-password" : "current-password";
+  $("switchText").textContent = isRegistering ? "Already have an account?" : "Don't have an account?";
+  $("switchAuth").textContent = isRegistering ? "Log in" : "Create account";
   $("authNotice").textContent = "";
 });
 
-$("authForm").addEventListener("submit", async (event) => {
+$("authForm").addEventListener("submit",async event=>{
   event.preventDefault();
-
   const email = $("emailInput").value.trim();
   const password = $("passwordInput").value;
   const name = $("nameInput").value.trim();
@@ -577,61 +607,48 @@ $("authForm").addEventListener("submit", async (event) => {
   $("authButton").disabled = true;
   $("authNotice").textContent = "Please wait...";
 
-  try {
-    if (isRegistering) {
-      const result = await auth.createUserWithEmailAndPassword(
-        email,
-        password
-      );
-
-      if (name) {
-        await result.user.updateProfile({
-          displayName: name
-        });
-      }
-    } else {
-      await auth.signInWithEmailAndPassword(email, password);
+  try{
+    if(isRegistering){
+      const result = await auth.createUserWithEmailAndPassword(email,password);
+      if(name) await result.user.updateProfile({displayName:name});
+    }else{
+      await auth.signInWithEmailAndPassword(email,password);
     }
-  } catch (error) {
+  }catch(error){
     $("authNotice").textContent = friendlyAuthError(error);
-  } finally {
+  }finally{
     $("authButton").disabled = false;
   }
 });
 
-function friendlyAuthError(error) {
+function friendlyAuthError(error){
   const messages = {
-    "auth/email-already-in-use": "This email already has an account. Please log in.",
-    "auth/invalid-email": "Please enter a valid email address.",
-    "auth/weak-password": "Your password must contain at least 6 characters.",
-    "auth/user-not-found": "No account was found with this email.",
-    "auth/wrong-password": "Incorrect password.",
-    "auth/invalid-credential": "Incorrect email or password.",
-    "auth/too-many-requests": "Too many attempts. Please try again later.",
-    "auth/network-request-failed": "Network error. Check your internet connection."
+    "auth/email-already-in-use":"This email already has an account. Please log in.",
+    "auth/invalid-email":"Please enter a valid email address.",
+    "auth/weak-password":"Your password must contain at least 6 characters.",
+    "auth/user-not-found":"No account was found with this email.",
+    "auth/wrong-password":"Incorrect password.",
+    "auth/invalid-credential":"Incorrect email or password.",
+    "auth/too-many-requests":"Too many attempts. Please try again later.",
+    "auth/network-request-failed":"Network error. Check your internet connection."
   };
-
   return messages[error.code] || error.message || "Authentication failed.";
 }
 
-/* LOGIN STATE */
-auth.onAuthStateChanged(async (user) => {
+auth.onAuthStateChanged(async user=>{
   currentUser = user;
 
-  if (user) {
+  if(user){
     $("authScreen").classList.add("hidden");
     $("appScreen").classList.remove("hidden");
-
     conversationHistory = [];
     currentConversationId = null;
     conversationList = [];
     renderHistory();
-
     await loadCloudHistory();
-  } else {
+  }else{
     $("appScreen").classList.add("hidden");
     $("authScreen").classList.remove("hidden");
-
     conversationHistory = [];
     currentConversationId = null;
     conversationList = [];
@@ -641,93 +658,79 @@ auth.onAuthStateChanged(async (user) => {
   }
 });
 
-$("logoutBtn").addEventListener("click", async () => {
-  try {
-    await auth.signOut();
-  } catch (error) {
-    alert("Could not log out. Please try again.");
-  }
+$("logoutBtn").addEventListener("click",async()=>{
+  try{await auth.signOut();}
+  catch(error){alert("Could not log out. Please try again.");}
 });
 
-/* MIGRATE THE OLD PHONE-SAVED CHAT ONCE */
-async function migrateOldHistory() {
-  if (!currentUser) return;
+/* MIGRATE OLD LOCAL CHAT HISTORY */
+async function migrateOldHistory(){
+  if(!currentUser) return;
 
-  const legacyKey = localHistoryKey();
-  const oldData = localStorage.getItem(legacyKey);
-
-  if (!oldData) return;
+  const oldData = localStorage.getItem(localHistoryKey());
+  if(!oldData) return;
 
   let oldMessages;
-
-  try {
-    oldMessages = JSON.parse(oldData);
-  } catch (error) {
+  try{oldMessages = JSON.parse(oldData);}
+  catch(error){
     console.warn("Old local chat history could not be read.");
     return;
   }
 
-  if (!Array.isArray(oldMessages) || oldMessages.length === 0) {
-    return;
-  }
+  if(!Array.isArray(oldMessages) || !oldMessages.length) return;
 
   const legacyDoc = userChatsCollection().doc("legacy_" + currentUser.uid);
-  const existingLegacy = await legacyDoc.get();
-
-  if (existingLegacy.exists) return;
+  const existing = await legacyDoc.get();
+  if(existing.exists) return;
 
   const messages = cleanMessages(oldMessages);
 
   await legacyDoc.set({
-    title: makeChatTitle(messages),
-    messages: messages,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    title:makeChatTitle(messages),
+    messages,
+    createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt:firebase.firestore.FieldValue.serverTimestamp()
   });
 }
 
-/* LOAD ALL SAVED CONVERSATIONS */
-async function loadCloudHistory() {
-  if (!currentUser || isLoadingChats) return;
+/* LOAD SAVED CONVERSATIONS */
+async function loadCloudHistory(){
+  if(!currentUser || isLoadingChats) return;
 
   isLoadingChats = true;
   $("historyStatus").textContent = "Loading conversations...";
-  $("historyList").innerHTML =
-    '<div class="history-empty">Loading your saved conversations...</div>';
+  $("historyList").textContent = "Loading your saved conversations...";
 
-  try {
+  try{
     await migrateOldHistory();
 
     const snapshot = await userChatsCollection()
-      .orderBy("updatedAt", "desc")
+      .orderBy("updatedAt","desc")
       .limit(50)
       .get();
 
-    conversationList = snapshot.docs.map(doc => ({
-      id: doc.id,
+    conversationList = snapshot.docs.map(doc=>({
+      id:doc.id,
       ...doc.data()
     }));
 
     renderConversationList();
-
-    $("historyStatus").textContent =
-      conversationList.length + " saved";
-
-  } catch (error) {
-    console.error("Chat history loading failed:", error);
+    $("historyStatus").textContent = conversationList.length + " saved";
+  }catch(error){
+    console.error("Chat history loading failed:",error);
     $("historyStatus").textContent = "Could not load history";
-    $("historyList").innerHTML =
-      '<div class="history-empty">Could not load saved conversations. Check your internet connection and Firestore rules.</div>';
-  } finally {
+    $("historyList").textContent =
+      "Could not load saved conversations. Check your connection and Firestore rules.";
+  }finally{
     isLoadingChats = false;
   }
 }
 
-function renderConversationList() {
+function renderConversationList(){
   const list = $("historyList");
   list.replaceChildren();
 
-  if (!conversationList.length) {
+  if(!conversationList.length){
     const empty = document.createElement("div");
     empty.className = "history-empty";
     empty.textContent = "Your saved conversations will appear here.";
@@ -735,96 +738,77 @@ function renderConversationList() {
     return;
   }
 
-  conversationList.forEach(chat => {
+  conversationList.forEach(chat=>{
     const button = document.createElement("button");
     button.type = "button";
     button.className = "history-item";
-
-    if (chat.id === currentConversationId) {
-      button.classList.add("active");
-    }
-
+    if(chat.id === currentConversationId) button.classList.add("active");
     button.textContent = chat.title || "Saved conversation";
-
-    button.addEventListener("click", () => {
-      openConversation(chat.id);
-    });
-
+    button.addEventListener("click",()=>openConversation(chat.id));
     list.appendChild(button);
   });
 }
 
-/* OPEN A PREVIOUS CONVERSATION */
-async function openConversation(chatId) {
-  if (!currentUser || isSending) return;
-
+async function openConversation(chatId){
+  if(!currentUser || isSending) return;
   $("historyStatus").textContent = "Opening conversation...";
 
-  try {
+  try{
     const snapshot = await userChatsCollection().doc(chatId).get();
-
-    if (!snapshot.exists) {
-      throw new Error("This conversation no longer exists.");
-    }
+    if(!snapshot.exists) throw new Error("This conversation no longer exists.");
 
     const data = snapshot.data();
-
     currentConversationId = chatId;
-    conversationHistory = Array.isArray(data.messages)
-      ? cleanMessages(data.messages)
-      : [];
+    conversationHistory = Array.isArray(data.messages) ? cleanMessages(data.messages) : [];
 
     renderHistory();
     renderConversationList();
-
-    $("historyStatus").textContent =
-      conversationList.length + " saved";
-
+    $("historyStatus").textContent = conversationList.length + " saved";
     $("messageInput").value = "";
     currentImage = null;
     $("imageInput").value = "";
     $("filePreview").textContent = "";
-
-  } catch (error) {
+  }catch(error){
     $("historyStatus").textContent = "Could not open chat";
     alert(error.message || "Could not open this conversation.");
   }
 }
 
-/* SAVE CONVERSATION TO FIRESTORE */
-async function saveConversation() {
-  if (!currentUser || !conversationHistory.length) return;
+/* SAVE CHAT — KEEP ORIGINAL CREATION DATE */
+async function saveConversation(){
+  if(!currentUser || !conversationHistory.length) return;
 
   const messages = cleanMessages(conversationHistory);
 
-  if (!currentConversationId) {
+  if(!currentConversationId){
     currentConversationId = userChatsCollection().doc().id;
   }
 
   const chatRef = userChatsCollection().doc(currentConversationId);
+  const existing = await chatRef.get();
 
-  await chatRef.set({
-    title: makeChatTitle(messages),
-    messages: messages,
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  }, { merge: true });
+  const saveData = {
+    title:makeChatTitle(messages),
+    messages,
+    updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+  };
 
+  if(!existing.exists){
+    saveData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+  }
+
+  await chatRef.set(saveData,{merge:true});
   $("historyStatus").textContent = "Saved to your account";
-
   await loadCloudHistory();
 }
 
 /* NEW CHAT — OLD CHATS REMAIN SAVED */
-$("newChatBtn").addEventListener("click", () => {
-  if (isSending) return;
-
+$("newChatBtn").addEventListener("click",()=>{
+  if(isSending) return;
   conversationHistory = [];
   currentConversationId = null;
-
   renderHistory();
   renderConversationList();
-
   $("messageInput").value = "";
   currentImage = null;
   $("imageInput").value = "";
@@ -833,83 +817,253 @@ $("newChatBtn").addEventListener("click", () => {
 });
 
 /* MODE SELECTION */
-document.querySelectorAll(".tool").forEach((button) => {
-  button.addEventListener("click", () => {
+document.querySelectorAll(".tool").forEach(button=>{
+  button.addEventListener("click",()=>{
     currentMode = button.dataset.mode;
-
-    document.querySelectorAll(".tool").forEach((item) => {
-      item.classList.toggle("active", item === button);
+    document.querySelectorAll(".tool").forEach(item=>{
+      item.classList.toggle("active",item === button);
     });
-
     $("modeLabel").textContent = modeNames[currentMode];
 
     const placeholders = {
-      chat: "Message ORVEX AI...",
-      web_search: "What would you like ORVEX to search for?",
-      translate: "Enter the text you want to translate and the target language...",
-      analyze_image: "Attach an image and ask ORVEX to examine it...",
-      generate_image: "Describe the image you want ORVEX to create...",
-      edit_image: "Attach an image and describe the edits you want..."
+      chat:"Message ORVEX AI...",
+      web_search:"What would you like ORVEX to search for?",
+      translate:"Enter the text you want to translate and the target language...",
+      analyze_image:"Attach an image and ask ORVEX to examine it...",
+      generate_image:"Describe the image you want ORVEX to create...",
+      edit_image:"Attach an image and describe the edits you want..."
     };
     $("messageInput").placeholder = placeholders[currentMode];
   });
 });
 
 /* IMAGE ATTACHMENT */
-$("attachBtn").addEventListener("click", () => {
-  $("imageInput").click();
-});
+  $("attachBtn").addEventListener("click",()=>$("imageInput").click());
 
-$("imageInput").addEventListener("change", async () => {
+$("imageInput").addEventListener("change",async()=>{
   const file = $("imageInput").files[0];
-
   currentImage = null;
   $("filePreview").textContent = "";
+  if(!file) return;
 
-  if (!file) return;
-
-  if (!file.type.startsWith("image/")) {
+  if(!file.type.startsWith("image/")){
     $("filePreview").textContent = "Please select an image.";
     $("imageInput").value = "";
     return;
   }
-
-  if (file.size > 5 * 1024 * 1024) {
+  if(file.size > 5 * 1024 * 1024){
     $("filePreview").textContent = "Image must be 5 MB or smaller.";
     $("imageInput").value = "";
     return;
   }
 
-  try {
+  try{
     currentImage = await readImageAsDataURL(file);
     $("filePreview").textContent = "Attached: " + file.name;
-  } catch (error) {
+  }catch(error){
     $("filePreview").textContent = "Could not read this image.";
     currentImage = null;
   }
 });
-  function readImageAsDataURL(file) {
-  return new Promise((resolve, reject) => {
+
+function readImageAsDataURL(file){
+  return new Promise((resolve,reject)=>{
     const reader = new FileReader();
-
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error("Image reading failed"));
-
+    reader.onload = ()=>resolve(reader.result);
+    reader.onerror = ()=>reject(new Error("Image reading failed"));
     reader.readAsDataURL(file);
   });
 }
 
-/* SAFE MESSAGE DISPLAY */
-function addMessage(role, content, imageUrl = null) {
+/* SAFE MARKDOWN FORMATTING */
+function appendInline(parent,text){
+  const pattern = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*]+\*|_[^_]+_)/g;
+  let last = 0;
+  let match;
+
+  while((match = pattern.exec(text)) !== null){
+    if(match.index > last){
+      parent.appendChild(document.createTextNode(text.slice(last,match.index)));
+    }
+
+    const token = match[0];
+    let element;
+
+    if(token.startsWith("**") || token.startsWith("__")){
+      element = document.createElement("strong");
+      element.textContent = token.slice(2,-2);
+    }else if(token.startsWith("`")){
+      element = document.createElement("code");
+      element.textContent = token.slice(1,-1);
+    }else{
+      element = document.createElement("em");
+      element.textContent = token.slice(1,-1);
+    }
+
+    parent.appendChild(element);
+    last = pattern.lastIndex;
+  }
+
+  if(last < text.length){
+    parent.appendChild(document.createTextNode(text.slice(last)));
+  }
+}
+
+function renderMarkdown(container,source){
+  container.replaceChildren();
+
+  const lines = String(source || "").replace(/\r\n/g,"\n").split("\n");
+  let paragraph = [];
+  let list = null;
+  let codeLines = [];
+  let inCode = false;
+  function flushParagraph(){
+    if(!paragraph.length) return;
+    const p = document.createElement("p");
+    appendInline(p,paragraph.join(" "));
+    container.appendChild(p);
+    paragraph = [];
+  }
+
+  function flushList(){
+    if(!list) return;
+    container.appendChild(list);
+    list = null;
+  }
+
+  function addListItem(text,ordered){
+    flushParagraph();
+    if(list && list.dataset.type !== (ordered ? "ol" : "ul")) flushList();
+
+    if(!list){
+      list = document.createElement(ordered ? "ol" : "ul");
+      list.dataset.type = ordered ? "ol" : "ul";
+    }
+
+    const li = document.createElement("li");
+    appendInline(li,text);
+    list.appendChild(li);
+  }
+
+  for(const line of lines){
+    const trimmed = line.trim();
+
+    if(trimmed.startsWith("```")){
+      flushParagraph();
+      flushList();
+
+      if(!inCode){
+        inCode = true;
+        codeLines = [];
+      }else{
+        const pre = document.createElement("pre");
+        const code = document.createElement("code");
+        code.textContent = codeLines.join("\n");
+        pre.appendChild(code);
+        container.appendChild(pre);
+        inCode = false;
+        }
+      continue;
+    }
+
+    if(inCode){
+      codeLines.push(line);
+      continue;
+    }
+
+    if(!trimmed){
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if(heading){
+      flushParagraph();
+      flushList();
+      const h = document.createElement("h" + heading[1].length);
+      appendInline(h,heading[2]);
+      container.appendChild(h);
+      continue;
+    }
+
+    if(/^([-*_])\1\1+$/.test(trimmed)){
+      flushParagraph();
+      flushList();
+      container.appendChild(document.createElement("hr"));
+      continue;
+    }
+
+    const quote = trimmed.match(/^>\s?(.*)$/);
+    if(quote){
+      flushParagraph();
+      flushList();
+      const block = document.createElement("blockquote");
+      appendInline(block,quote[1]);
+      container.appendChild(block);
+      continue;
+    }
+
+    const bullet = trimmed.match(/^[-*+]\s+(.+)$/);
+    if(bullet){
+      addListItem(bullet[1],false);
+      continue;
+    }
+
+    const numbered = trimmed.match(/^\d+[.)]\s+(.+)$/);
+    if(numbered){
+      addListItem(numbered[1],true);
+      continue;
+    }
+
+    flushList();
+    paragraph.push(trimmed);
+  }
+
+  flushParagraph();
+  flushList();
+
+  if(inCode){
+    const pre = document.createElement("pre");
+    const code = document.createElement("code");
+    code.textContent = codeLines.join("\n");
+    pre.appendChild(code);
+    container.appendChild(pre);
+  }
+}
+
+/* DISPLAY MESSAGES */
+function addMessage(role,content,imageUrl=null){
   const message = document.createElement("div");
+  message.className = "message " + (role === "user" ? "user-message" : "ai-message");
 
-  message.className =
-    "message " + (role === "user" ? "user-message" : "ai-message");
+  if(role === "user"){
+    message.textContent = content || "";
+  }else{
+    const top = document.createElement("div");
+    top.className = "ai-message-top";
 
-  message.textContent = content || "";
+    const logo = document.createElement("img");
+    logo.src = "/icons/orvex.svg";
+    logo.alt = "ORVEX";
+    top.appendChild(logo);
 
-  if (imageUrl && typeof imageUrl === "string") {
+    const label = document.createElement("span");
+    label.textContent = "ORVEX AI";
+    top.appendChild(label);
+
+    const body = document.createElement("div");
+    body.className = "answer-body";
+    renderMarkdown(body,content || "");
+
+    message.appendChild(top);
+    message.appendChild(body);
+  }
+
+  if(imageUrl && typeof imageUrl === "string" &&
+     (imageUrl.startsWith("https://") || imageUrl.startsWith("data:image/"))){
     const image = document.createElement("img");
+    image.className = "generated-image";
     image.src = imageUrl;
     image.alt = "ORVEX AI generated image";
     image.loading = "lazy";
@@ -920,18 +1074,15 @@ function addMessage(role, content, imageUrl = null) {
   $("messages").scrollTop = $("messages").scrollHeight;
 }
 
-function renderHistory() {
+function renderHistory(){
   $("messages").replaceChildren();
 
-  if (!conversationHistory.length) {
-    addMessage(
-      "ai",
-      "Hello! I'm ORVEX AI. How can I help you today?"
-    );
+  if(!conversationHistory.length){
+    addMessage("ai","Hello! I'm ORVEX AI. How can I help you today?");
     return;
-    }
+  }
 
-  conversationHistory.forEach(item => {
+  conversationHistory.forEach(item=>{
     addMessage(
       item.role === "user" ? "user" : "ai",
       item.content,
@@ -940,33 +1091,28 @@ function renderHistory() {
   });
 }
 
-/* SEND TO ORVEX BACKEND */
-$("chatForm").addEventListener("submit", async (event) => {
+/* SEND REQUEST TO ORVEX BACKEND */
+$("chatForm").addEventListener("submit",async event=>{
   event.preventDefault();
+  if(isSending) return;
 
-  if (isSending) return;
-
-  if (!currentUser) {
-    addMessage("ai", "Please log in first.");
+  if(!currentUser){
+    addMessage("ai","Please log in first.");
     return;
   }
 
   const message = $("messageInput").value.trim();
+  if(!message && !currentImage) return;
 
-  if (!message && !currentImage) return;
-
-  if (
-    (currentMode === "analyze_image" || currentMode === "edit_image") &&
-    !currentImage
-  ) {
-    addMessage("ai", "Please attach an image first.");
+  if((currentMode === "analyze_image" || currentMode === "edit_image") && !currentImage){
+    addMessage("ai","Please attach an image first.");
     return;
   }
 
-  if (currentMode === "generate_image" && !message) {
-    addMessage("ai", "Please describe the image you want to generate.");
+  if(currentMode === "generate_image" && !message){
+    addMessage("ai","Please describe the image you want to generate.");
     return;
-  }
+    }
   isSending = true;
   $("sendBtn").disabled = true;
   $("newChatBtn").disabled = true;
@@ -975,94 +1121,92 @@ $("chatForm").addEventListener("submit", async (event) => {
   const userText = message || "Please examine this image.";
   const imageForRequest = currentImage;
 
-  addMessage("user", userText);
-
-  if (imageForRequest) {
-    addMessage("user", "Image attached.");
-  }
+  addMessage("user",userText);
+  if(imageForRequest) addMessage("user","Image attached.");
 
   $("messageInput").value = "";
 
   const requestHistory = [
     ...conversationHistory,
-    { role: "user", content: userText }
+    {role:"user",content:userText}
   ].slice(-20);
 
-  try {
+  try{
     const idToken = await currentUser.getIdToken();
 
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + idToken
+    const response = await fetch("/api/chat",{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization":"Bearer " + idToken
       },
-      body: JSON.stringify({
-        mode: currentMode,
-        message: userText,
-        history: requestHistory,
-        imageData: imageForRequest
+      body:JSON.stringify({
+        mode:currentMode,
+        message:userText,
+        history:requestHistory,
+        imageData:imageForRequest
       }),
-      signal: AbortSignal.timeout(65000)
+      signal:AbortSignal.timeout(65000)
     });
 
-    const data = await response.json().catch(() => ({}));
-     if (!response.ok) {
+    const data = await response.json().catch(()=>({}));
+
+    if(!response.ok){
       throw new Error(
         data.error || data.message ||
         "ORVEX could not complete your request. Please try again."
       );
     }
 
-    const answer =
-      data.reply || data.answer || data.text || "";
+    const answer = data.reply || data.answer || data.text || "";
 
-    if (typeof answer !== "string" || !answer.trim()) {
+    if(typeof answer !== "string" || !answer.trim()){
       throw new Error("ORVEX returned an empty response.");
     }
 
-    const generatedImage =
-      typeof data.imageUrl === "string" ? data.imageUrl : null;
+    const generatedImage = typeof data.imageUrl === "string" ? data.imageUrl : null;
+    addMessage("ai",answer,generatedImage);
 
-    addMessage("ai", answer, generatedImage);
-
+    conversationHistory.push({role:"user",content:userText});
     conversationHistory.push({
-      role: "user",
-      content: userText
-    });
-
-    conversationHistory.push({
-      role: "assistant",
-      content: answer,
+      role:"assistant",
+      content:answer,
       ...(generatedImage && generatedImage.startsWith("https://")
-        ? { imageUrl: generatedImage }
-        : {})
+        ? {imageUrl:generatedImage} : {})
     });
 
-    try {
+    try{
       await saveConversation();
-    } catch (saveError) {
-      console.error("Cloud chat save failed:", saveError);
+    }catch(saveError){
+      console.error("Cloud chat save failed:",saveError);
       $("historyStatus").textContent = "Reply received; cloud save failed";
       addMessage(
         "ai",
-        "Your reply was received, but this conversation could not be saved to your account. Please check your internet connection and Firestore permissions."
+        "Your reply was received, but this conversation could not be saved to your account. Please check your connection and Firestore permissions."
       );
-      }
+    }
 
     currentImage = null;
     $("imageInput").value = "";
     $("filePreview").textContent = "";
-
-  } catch (error) {
-    addMessage("ai", "Error: " + error.message);
-  } finally {
+    }catch(error){
+    addMessage("ai","Error: " + error.message);
+  }finally{
     isSending = false;
     $("sendBtn").disabled = false;
     $("newChatBtn").disabled = false;
     $("sendBtn").textContent = "Send ↑";
   }
 });
+
+/* PROGRESSIVE WEB APP — SERVICE WORKER */
+if("serviceWorker" in navigator){
+  window.addEventListener("load",()=>{
+    navigator.serviceWorker.register("/service-worker.js")
+      .then(()=>console.log("ORVEX service worker registered."))
+      .catch(error=>console.error("Service worker registration failed:",error));
+  });
+}
 </script>
 
 </body>
