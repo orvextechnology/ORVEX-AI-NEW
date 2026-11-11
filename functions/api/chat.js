@@ -1,17 +1,21 @@
 
 const FIREBASE_API_KEY = "AIzaSyD4oCtqtD8U1wnErSP10iu2sIr0XzaqrQs";
-const TEXT_MODEL = "gemini-3.8-flash";
-const BACKUP_TEXT_MODEL = "gemini-3.5-flash-lite";
+
+const TEXT_MODEL = "gemini-3.5-flash-lite";
+const BACKUP_TEXT_MODEL = "gemini-3.8-flash";
 const IMAGE_MODEL = "gemini-3.1-flash-image";
+
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 const SYSTEM_PROMPT = `
-You are ORVEX AI, a helpful, accurate and respectful AI assistant.
-Answer clearly and honestly.
-If you are unsure, say so.
-Never invent sources, facts or capabilities.
-For translation requests, translate faithfully and preserve the original meaning and tone.
-For web research, prioritize current, verifiable information and distinguish facts from uncertainty.
+You are ORVEX AI, a helpful, intelligent, accurate and respectful AI assistant.
+Answer clearly, naturally and directly.
+Prioritize fast, useful answers without unnecessary explanations.
+Give detailed answers when the user asks for detail.
+If you are unsure, say so honestly.
+Never invent facts, sources or capabilities.
+Translate faithfully and preserve meaning and tone.
+For web research, use Google Search and provide sources where available.
 `;
 
 function jsonResponse(data, status = 200) {
@@ -25,7 +29,7 @@ function jsonResponse(data, status = 200) {
   });
 }
 
-async function fetchWithTimeout(url, options, timeoutMs = 45000) {
+async function fetchWithTimeout(url, options, timeoutMs = 20000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -36,7 +40,7 @@ async function fetchWithTimeout(url, options, timeoutMs = 45000) {
     });
   } catch (error) {
     if (error.name === "AbortError") {
-      throw new Error("The AI service took too long to respond. Please try again.");
+      throw new Error("The AI service timed out.");
     }
     throw error;
   } finally {
@@ -49,10 +53,12 @@ async function verifyFirebaseToken(idToken) {
     `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json"
+      },
       body: JSON.stringify({ idToken })
     },
-    15000
+    12000
   );
 
   const data = await response.json().catch(() => ({}));
@@ -62,7 +68,10 @@ async function verifyFirebaseToken(idToken) {
   }
 
   const user = data.users[0];
-  if (user.disabled === true) return null;
+
+  if (user.disabled === true) {
+    return null;
+  }
 
   return {
     uid: user.localId,
@@ -71,7 +80,9 @@ async function verifyFirebaseToken(idToken) {
 }
 
 function parseImageData(imageData) {
-  if (typeof imageData !== "string" || !imageData) return null;
+  if (typeof imageData !== "string" || !imageData) {
+    return null;
+  }
 
   const match = imageData.match(
     /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/
@@ -95,7 +106,9 @@ function parseImageData(imageData) {
 }
 
 function buildInteractionInput(history, message, image) {
-  const safeHistory = Array.isArray(history) ? history.slice(-12) : [];
+  const safeHistory = Array.isArray(history)
+    ? history.slice(-8)
+    : [];
 
   const messages = safeHistory.filter(item =>
     item &&
@@ -103,17 +116,25 @@ function buildInteractionInput(history, message, image) {
     typeof item.content === "string"
   );
 
-  if (!messages.length || messages[messages.length - 1].role !== "user") {
-    messages.push({ role: "user", content: message });
+  if (
+    !messages.length ||
+    messages[messages.length - 1].role !== "user"
+  ) {
+    messages.push({
+      role: "user",
+      content: message
+    });
   } else {
     messages[messages.length - 1].content = message;
   }
 
   const input = messages.map(item => ({
-    type: item.role === "assistant" ? "model_output" : "user_input",
+    type: item.role === "assistant"
+      ? "model_output"
+      : "user_input",
     content: [{
       type: "text",
-      text: item.content.slice(0, 12000)
+      text: item.content.slice(0, 6000)
     }]
   }));
 
@@ -129,14 +150,20 @@ function buildInteractionInput(history, message, image) {
 }
 
 function extractInteractionText(data) {
-  const steps = Array.isArray(data?.steps) ? data.steps : [];
+  const steps = Array.isArray(data?.steps)
+    ? data.steps
+    : [];
+
   const textParts = [];
 
   for (const step of steps) {
     if (step.type !== "model_output") continue;
 
     for (const item of step.content || []) {
-      if (item.type === "text" && typeof item.text === "string") {
+      if (
+        item.type === "text" &&
+        typeof item.text === "string"
+      ) {
         textParts.push(item.text);
       }
     }
@@ -146,7 +173,10 @@ function extractInteractionText(data) {
 }
 
 function extractInteractionSources(data) {
-  const steps = Array.isArray(data?.steps) ? data.steps : [];
+  const steps = Array.isArray(data?.steps)
+    ? data.steps
+    : [];
+
   const sources = [];
   const seen = new Set();
 
@@ -173,31 +203,49 @@ function extractInteractionSources(data) {
   return sources.slice(0, 8);
 }
 
-// Automatically retry temporary overload using the backup model.
+// Fast primary model with automatic backup,
+// including when the primary request times out.
 async function callTextModelWithFallback(apiKey, requestBody) {
   const endpoint =
     "https://generativelanguage.googleapis.com/v1beta/interactions";
 
-  async function send(payload) {
-    const response = await fetchWithTimeout(
-      endpoint,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey
+  async function send(payload, timeoutMs) {
+    try {
+      const response = await fetchWithTimeout(
+        endpoint,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey
+          },
+          body: JSON.stringify(payload)
         },
-        body: JSON.stringify(payload)
-      },
-      22000
-    );
+        timeoutMs
+      );
 
-    const data = await response.json().catch(() => ({}));
+      const data = await response.json().catch(() => ({}));
 
-    return { response, data };
+      return {
+        response,
+        data,
+        timedOut: false
+      };
+    } catch (error) {
+      return {
+        response: null,
+        data: {
+          error: {
+            message: error.message || "Gemini request failed."
+          }
+        },
+        timedOut: /timed out/i.test(error.message || "")
+      };
+    }
   }
 
-  let result = await send(requestBody);
+  // Primary: fast, lightweight model.
+  let result = await send(requestBody, 14000);
 
   const errorMessage = String(
     result.data?.error?.message || ""
@@ -208,24 +256,32 @@ async function callTextModelWithFallback(apiKey, requestBody) {
   ).toLowerCase();
 
   const temporaryOverload =
-    result.response.status === 503 ||
-    result.response.status === 429 ||
+    result.response?.status === 503 ||
+    result.response?.status === 429 ||
     /high demand|overload|temporarily unavailable|resource exhausted|try again later/i.test(errorMessage) ||
     /resource_exhausted|unavailable/i.test(errorStatus);
 
   const quotaProblem =
     /quota exceeded|billing|insufficient quota/i.test(errorMessage);
 
-  if (
-    !result.response.ok &&
-    temporaryOverload &&
-    !quotaProblem
-  ) {
-    result = await send({
-      ...requestBody,
-      model: BACKUP_TEXT_MODEL
-    });
+  const shouldUseBackup =
+    result.timedOut ||
+    (
+      result.response &&
+      !result.response.ok &&
+      temporaryOverload &&
+      !quotaProblem
+    );
+
+  if (!shouldUseBackup) {
+    return result;
   }
+
+  // Backup: more capable Flash model.
+  result = await send({
+    ...requestBody,
+    model: BACKUP_TEXT_MODEL
+  }, 22000);
 
   return result;
 }
@@ -301,7 +357,9 @@ async function runImageModel(apiKey, prompt, image) {
   }
 
   const mimeType =
-    imageBlock.mime_type || imageBlock.mimeType || "image/png";
+    imageBlock.mime_type ||
+    imageBlock.mimeType ||
+    "image/png";
 
   return {
     reply: text.trim() || "Your image is ready.",
@@ -317,8 +375,11 @@ export async function onRequestPost({ request, env }) {
       }, 503);
     }
 
-    const authorization = request.headers.get("Authorization") || "";
-    const tokenMatch = authorization.match(/^Bearer\s+(.+)$/i);
+    const authorization =
+      request.headers.get("Authorization") || "";
+
+    const tokenMatch =
+      authorization.match(/^Bearer\s+(.+)$/i);
 
     if (!tokenMatch) {
       return jsonResponse({
@@ -337,7 +398,9 @@ export async function onRequestPost({ request, env }) {
     const body = await request.json().catch(() => null);
 
     if (!body || typeof body !== "object") {
-      return jsonResponse({ error: "Invalid request body." }, 400);
+      return jsonResponse({
+        error: "Invalid request body."
+      }, 400);
     }
 
     const allowedModes = [
@@ -358,7 +421,9 @@ export async function onRequestPost({ request, env }) {
       : "";
 
     if (!message) {
-      return jsonResponse({ error: "Please enter a message." }, 400);
+      return jsonResponse({
+        error: "Please enter a message."
+      }, 400);
     }
 
     if (message.length > 12000) {
@@ -372,7 +437,9 @@ export async function onRequestPost({ request, env }) {
     try {
       image = parseImageData(body.imageData);
     } catch (error) {
-      return jsonResponse({ error: error.message }, 400);
+      return jsonResponse({
+        error: error.message
+      }, 400);
     }
 
     if (
@@ -384,7 +451,10 @@ export async function onRequestPost({ request, env }) {
       }, 400);
     }
 
-    if (mode === "generate_image" || mode === "edit_image") {
+    if (
+      mode === "generate_image" ||
+      mode === "edit_image"
+    ) {
       const prompt = mode === "edit_image"
         ? `Edit the supplied image according to these instructions. Preserve details not mentioned. User instructions: ${message}`
         : `Generate a high-quality image based on this description: ${message}`;
@@ -418,29 +488,43 @@ export async function onRequestPost({ request, env }) {
     const requestBody = {
       model: TEXT_MODEL,
       store: false,
-      input: buildInteractionInput(body.history, message, image),
+      input: buildInteractionInput(
+        body.history,
+        message,
+        image
+      ),
       system_instruction: instruction,
       generation_config: {
         thinking_level: "low",
-        max_output_tokens: 1800
+        max_output_tokens: 1200
       }
     };
 
     if (mode === "web_search") {
-      requestBody.tools = [{ type: "google_search" }];
+      requestBody.tools = [{
+        type: "google_search"
+      }];
     }
 
-    const { response, data } = await callTextModelWithFallback(
+    const result = await callTextModelWithFallback(
       env.ORVEX_GEMINI_KEY,
       requestBody
     );
 
-    if (!response.ok) {
+    if (!result.response) {
       return jsonResponse({
-        error: data?.error?.message ||
-          `Gemini request failed with status ${response.status}. Both text models may be unavailable.`
-      }, response.status >= 500 ? 502 : 400);
+        error: "Both AI attempts failed to respond. Please try again."
+      }, 504);
     }
+
+    if (!result.response.ok) {
+      return jsonResponse({
+        error: result.data?.error?.message ||
+          `Gemini request failed with status ${result.response.status}.`
+      }, result.response.status >= 500 ? 502 : 400);
+    }
+
+    const data = result.data;
 
     if (
       data.status === "failed" ||
@@ -455,7 +539,7 @@ export async function onRequestPost({ request, env }) {
 
     if (!reply) {
       return jsonResponse({
-        error: `ORVEX received no text response. Interaction status: ${data.status || "unknown"}.`
+        error: "ORVEX received no text response. Please try again."
       }, 502);
     }
 
@@ -477,7 +561,7 @@ export async function onRequestPost({ request, env }) {
   } catch (error) {
     const isTimeout =
       error?.name === "AbortError" ||
-      /took too long/i.test(error?.message || "");
+      /timed out|took too long/i.test(error?.message || "");
 
     return jsonResponse({
       error: isTimeout
@@ -486,4 +570,4 @@ export async function onRequestPost({ request, env }) {
     }, isTimeout ? 504 : 500);
   }
       }
-          
+      
