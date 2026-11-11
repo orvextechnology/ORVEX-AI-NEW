@@ -24,33 +24,45 @@ function jsonResponse(data, status = 200) {
   });
 }
 
+async function fetchWithTimeout(url, options, timeoutMs = 45000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("The AI service took too long to respond. Please try again.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function verifyFirebaseToken(idToken) {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`,
     {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken })
-    }
+    },
+    15000
   );
 
   const data = await response.json().catch(() => ({}));
 
-  if (
-    !response.ok ||
-    !Array.isArray(data.users) ||
-    !data.users[0]
-  ) {
+  if (!response.ok || !Array.isArray(data.users) || !data.users[0]) {
     return null;
   }
 
   const user = data.users[0];
 
-  if (user.disabled === true) {
-    return null;
-  }
+  if (user.disabled === true) return null;
 
   return {
     uid: user.localId,
@@ -59,29 +71,21 @@ async function verifyFirebaseToken(idToken) {
 }
 
 function parseImageData(imageData) {
-  if (typeof imageData !== "string" || !imageData) {
-    return null;
-  }
+  if (typeof imageData !== "string" || !imageData) return null;
 
   const match = imageData.match(
     /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/
   );
 
   if (!match) {
-    throw new Error(
-      "Unsupported image. Please use PNG, JPEG or WEBP."
-    );
+    throw new Error("Unsupported image. Please use PNG, JPEG or WEBP.");
   }
 
   const base64 = match[2];
-  const estimatedBytes = Math.floor(
-    (base64.length * 3) / 4
-  );
+  const estimatedBytes = Math.floor((base64.length * 3) / 4);
 
   if (estimatedBytes > MAX_IMAGE_BYTES) {
-    throw new Error(
-      "Image is too large. Please upload an image under 5 MB."
-    );
+    throw new Error("Image is too large. Please upload an image under 5 MB.");
   }
 
   return {
@@ -90,79 +94,93 @@ function parseImageData(imageData) {
   };
 }
 
-function buildContents(history, message, image) {
+function buildInteractionInput(history, message, image) {
   const safeHistory = Array.isArray(history)
     ? history.slice(-12)
     : [];
 
-  const contents = safeHistory
-    .filter(item =>
-      item &&
-      (item.role === "user" || item.role === "assistant") &&
-      typeof item.content === "string"
-    )
-    .map(item => ({
-      role: item.role === "assistant" ? "model" : "user",
-      parts: [
-        {
-          text: item.content.slice(0, 12000)
-        }
-      ]
-    }));
+  const messages = safeHistory.filter(item =>
+    item &&
+    (item.role === "user" || item.role === "assistant") &&
+    typeof item.content === "string"
+  );
 
   if (
-    !contents.length ||
-    contents[contents.length - 1].role !== "user"
+    !messages.length ||
+    messages[messages.length - 1].role !== "user"
   ) {
-    contents.push({
+    messages.push({
       role: "user",
-      parts: [{ text: message }]
+      content: message
     });
   } else {
-    contents[contents.length - 1].parts[0].text = message;
+    messages[messages.length - 1].content = message;
   }
 
+  const input = messages.map(item => ({
+    type: item.role === "assistant" ? "model_output" : "user_input",
+    content: [{
+      type: "text",
+      text: item.content.slice(0, 12000)
+    }]
+  }));
+
   if (image) {
-    contents[contents.length - 1].parts.push({
-      inlineData: {
-        mimeType: image.mimeType,
-        data: image.data
-      }
+    const lastMessage = input[input.length - 1];
+
+    lastMessage.content.push({
+      type: "image",
+      mime_type: image.mimeType,
+      data: image.data
     });
   }
 
-  return contents;
+  return input;
 }
 
-function extractText(data) {
-  const parts =
-    data?.candidates?.[0]?.content?.parts || [];
+function extractInteractionText(data) {
+  const steps = Array.isArray(data?.steps) ? data.steps : [];
+  const textParts = [];
 
-  return parts
-    .map(part => part.text || "")
-    .join("\n")
-    .trim();
+  for (const step of steps) {
+    if (step.type !== "model_output") continue;
+
+    for (const item of step.content || []) {
+      if (item.type === "text" && typeof item.text === "string") {
+        textParts.push(item.text);
+      }
+    }
+  }
+
+  return textParts.join("\n").trim();
 }
 
-function extractSources(data) {
-  const chunks =
-    data?.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-
+function extractInteractionSources(data) {
+  const steps = Array.isArray(data?.steps) ? data.steps : [];
+  const sources = [];
   const seen = new Set();
 
-  return chunks
-    .map(chunk => chunk.web)
-    .filter(web => web && web.uri && web.title)
-    .filter(web => {
-      if (seen.has(web.uri)) return false;
-      seen.add(web.uri);
-      return true;
-    })
-    .slice(0, 8)
-    .map(web => ({
-      title: web.title,
-      url: web.uri
-    }));
+  for (const step of steps) {
+    if (step.type !== "model_output") continue;
+
+    for (const item of step.content || []) {
+      for (const annotation of item.annotations || []) {
+        const url = annotation.url || annotation.uri;
+        const title = annotation.title || url;
+
+        if (
+          typeof url === "string" &&
+          /^https?:\/\//i.test(url) &&
+          !seen.has(url)
+        ) {
+          seen.add(url);
+          sources.push({ title, url });
+        }
+      }
+    }
+  }
+
+  return sources.slice(0, 8);
 }
 
 async function runImageModel(apiKey, prompt, image) {
@@ -181,7 +199,7 @@ async function runImageModel(apiKey, prompt, image) {
     text: prompt
   });
 
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     "https://generativelanguage.googleapis.com/v1beta/interactions",
     {
       method: "POST",
@@ -198,23 +216,25 @@ async function runImageModel(apiKey, prompt, image) {
           aspect_ratio: "1:1"
         }
       })
-    }
+    },
+    55000
   );
 
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
     throw new Error(
-      data?.error?.message ||
-      "Image service request failed."
+      data?.error?.message || "The image service request failed."
     );
   }
 
-  let imageBlock = data?.output_image || null;
+  let imageBlock = data.output_image || null;
   let text = "";
 
   if (!imageBlock && Array.isArray(data.steps)) {
     for (const step of data.steps) {
+      if (step.type !== "model_output") continue;
+
       for (const item of step.content || []) {
         if (item.type === "image" && item.data) {
           imageBlock = item;
@@ -234,9 +254,7 @@ async function runImageModel(apiKey, prompt, image) {
   }
 
   const mimeType =
-    imageBlock.mime_type ||
-    imageBlock.mimeType ||
-    "image/png";
+    imageBlock.mime_type || imageBlock.mimeType || "image/png";
 
   return {
     reply: text.trim() || "Your image is ready.",
@@ -248,16 +266,12 @@ export async function onRequestPost({ request, env }) {
   try {
     if (!env.ORVEX_GEMINI_KEY) {
       return jsonResponse({
-        error: "ORVEX AI is not configured yet. Please contact support."
+        error: "ORVEX AI is not configured. Please contact support."
       }, 503);
     }
 
-    const authorization =
-      request.headers.get("Authorization") || "";
-
-    const tokenMatch = authorization.match(
-      /^Bearer\s+(.+)$/i
-    );
+    const authorization = request.headers.get("Authorization") || "";
+    const tokenMatch = authorization.match(/^Bearer\s+(.+)$/i);
 
     if (!tokenMatch) {
       return jsonResponse({
@@ -276,9 +290,7 @@ export async function onRequestPost({ request, env }) {
     const body = await request.json().catch(() => null);
 
     if (!body || typeof body !== "object") {
-      return jsonResponse({
-        error: "Invalid request body."
-      }, 400);
+      return jsonResponse({ error: "Invalid request body." }, 400);
     }
 
     const allowedModes = [
@@ -290,19 +302,14 @@ export async function onRequestPost({ request, env }) {
       "edit_image"
     ];
 
-    const mode = allowedModes.includes(body.mode)
-      ? body.mode
-      : "chat";
+    const mode = allowedModes.includes(body.mode) ? body.mode : "chat";
 
-    const message =
-      typeof body.message === "string"
-        ? body.message.trim()
-        : "";
+    const message = typeof body.message === "string"
+      ? body.message.trim()
+      : "";
 
     if (!message) {
-      return jsonResponse({
-        error: "Please enter a message."
-      }, 400);
+      return jsonResponse({ error: "Please enter a message." }, 400);
     }
 
     if (message.length > 12000) {
@@ -316,9 +323,7 @@ export async function onRequestPost({ request, env }) {
     try {
       image = parseImageData(body.imageData);
     } catch (error) {
-      return jsonResponse({
-        error: error.message
-      }, 400);
+      return jsonResponse({ error: error.message }, 400);
     }
 
     if (
@@ -330,14 +335,9 @@ export async function onRequestPost({ request, env }) {
       }, 400);
     }
 
-    /* IMAGE GENERATION AND EDITING */
-
-    if (
-      mode === "generate_image" ||
-      mode === "edit_image"
-    ) {
+    if (mode === "generate_image" || mode === "edit_image") {
       const prompt = mode === "edit_image"
-        ? `Edit the supplied image according to these instructions. Preserve details not mentioned in the request. User instructions: ${message}`
+        ? `Edit the supplied image according to these instructions. Preserve details not mentioned. User instructions: ${message}`
         : `Generate a high-quality image based on this description: ${message}`;
 
       const result = await runImageModel(
@@ -349,18 +349,16 @@ export async function onRequestPost({ request, env }) {
       return jsonResponse(result);
     }
 
-    /* CHAT, SEARCH, TRANSLATION AND IMAGE ANALYSIS */
-
     let instruction = SYSTEM_PROMPT;
 
     if (mode === "web_search") {
       instruction +=
-        " Use Google Search grounding to research the user's question. Cite sources in the answer when available.";
+        " Research the user's question using Google Search. Include source citations where available.";
     }
 
     if (mode === "translate") {
       instruction +=
-        " This is translation mode. Translate the user's text into the language they specify. If they did not specify a target language, ask which language they want.";
+        " Translate faithfully into the target language specified by the user. If no target language is specified, ask which language they want.";
     }
 
     if (mode === "analyze_image") {
@@ -369,30 +367,22 @@ export async function onRequestPost({ request, env }) {
     }
 
     const requestBody = {
-      contents: buildContents(
-        body.history,
-        message,
-        image
-      ),
-      systemInstruction: {
-        parts: [{ text: instruction }]
-      },
-      generationConfig: {
-        temperature: mode === "translate" ? 0.2 : 0.6,
-        maxOutputTokens: 1800
+      model: TEXT_MODEL,
+      store: false,
+      input: buildInteractionInput(body.history, message, image),
+      system_instruction: instruction,
+      generation_config: {
+        thinking_level: "low",
+        max_output_tokens: 1800
       }
     };
 
     if (mode === "web_search") {
-      requestBody.tools = [
-        {
-          google_search: {}
-        }
-      ];
+      requestBody.tools = [{ type: "google_search" }];
     }
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${TEXT_MODEL}:generateContent`,
+    const response = await fetchWithTimeout(
+      "https://generativelanguage.googleapis.com/v1beta/interactions",
       {
         method: "POST",
         headers: {
@@ -400,31 +390,35 @@ export async function onRequestPost({ request, env }) {
           "x-goog-api-key": env.ORVEX_GEMINI_KEY
         },
         body: JSON.stringify(requestBody)
-      }
+      },
+      55000
     );
 
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      const apiMessage =
-        data?.error?.message ||
-        "The AI service request failed.";
-
       return jsonResponse({
-        error: apiMessage
+        error: data?.error?.message ||
+          `Gemini request failed with status ${response.status}.`
       }, response.status >= 500 ? 502 : 400);
     }
 
-    const reply = extractText(data);
+    if (data.status === "failed" || data.status === "cancelled") {
+      return jsonResponse({
+        error: "The AI service could not complete this request. Please try again."
+      }, 502);
+    }
+
+    const reply = extractInteractionText(data);
 
     if (!reply) {
       return jsonResponse({
-        error: "ORVEX received an empty answer. Please try again."
+        error: `ORVEX received no text response. Interaction status: ${data.status || "unknown"}.`
       }, 502);
     }
 
     const sources = mode === "web_search"
-      ? extractSources(data)
+      ? extractInteractionSources(data)
       : [];
 
     const replyWithSources = sources.length
@@ -439,11 +433,15 @@ export async function onRequestPost({ request, env }) {
     });
 
   } catch (error) {
+    const isTimeout =
+      error?.name === "AbortError" ||
+      /took too long/i.test(error?.message || "");
+
     return jsonResponse({
-      error:
-        error?.message ||
-        "An unexpected server error occurred. Please try again."
-    }, 500);
+      error: isTimeout
+        ? "The AI service timed out. Please try again."
+        : error?.message || "An unexpected server error occurred."
+    }, isTimeout ? 504 : 500);
   }
       }
-      
+    
