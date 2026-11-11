@@ -1,6 +1,7 @@
 
 const FIREBASE_API_KEY = "AIzaSyD4oCtqtD8U1wnErSP10iu2sIr0XzaqrQs";
 const TEXT_MODEL = "gemini-3.8-flash";
+const BACKUP_TEXT_MODEL = "gemini-3.5-flash-lite";
 const IMAGE_MODEL = "gemini-3.1-flash-image";
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -61,7 +62,6 @@ async function verifyFirebaseToken(idToken) {
   }
 
   const user = data.users[0];
-
   if (user.disabled === true) return null;
 
   return {
@@ -95,9 +95,7 @@ function parseImageData(imageData) {
 }
 
 function buildInteractionInput(history, message, image) {
-  const safeHistory = Array.isArray(history)
-    ? history.slice(-12)
-    : [];
+  const safeHistory = Array.isArray(history) ? history.slice(-12) : [];
 
   const messages = safeHistory.filter(item =>
     item &&
@@ -105,14 +103,8 @@ function buildInteractionInput(history, message, image) {
     typeof item.content === "string"
   );
 
-  if (
-    !messages.length ||
-    messages[messages.length - 1].role !== "user"
-  ) {
-    messages.push({
-      role: "user",
-      content: message
-    });
+  if (!messages.length || messages[messages.length - 1].role !== "user") {
+    messages.push({ role: "user", content: message });
   } else {
     messages[messages.length - 1].content = message;
   }
@@ -126,9 +118,7 @@ function buildInteractionInput(history, message, image) {
   }));
 
   if (image) {
-    const lastMessage = input[input.length - 1];
-
-    lastMessage.content.push({
+    input[input.length - 1].content.push({
       type: "image",
       mime_type: image.mimeType,
       data: image.data
@@ -181,6 +171,63 @@ function extractInteractionSources(data) {
   }
 
   return sources.slice(0, 8);
+}
+
+// Automatically retry temporary overload using the backup model.
+async function callTextModelWithFallback(apiKey, requestBody) {
+  const endpoint =
+    "https://generativelanguage.googleapis.com/v1beta/interactions";
+
+  async function send(payload) {
+    const response = await fetchWithTimeout(
+      endpoint,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey
+        },
+        body: JSON.stringify(payload)
+      },
+      22000
+    );
+
+    const data = await response.json().catch(() => ({}));
+
+    return { response, data };
+  }
+
+  let result = await send(requestBody);
+
+  const errorMessage = String(
+    result.data?.error?.message || ""
+  ).toLowerCase();
+
+  const errorStatus = String(
+    result.data?.error?.status || ""
+  ).toLowerCase();
+
+  const temporaryOverload =
+    result.response.status === 503 ||
+    result.response.status === 429 ||
+    /high demand|overload|temporarily unavailable|resource exhausted|try again later/i.test(errorMessage) ||
+    /resource_exhausted|unavailable/i.test(errorStatus);
+
+  const quotaProblem =
+    /quota exceeded|billing|insufficient quota/i.test(errorMessage);
+
+  if (
+    !result.response.ok &&
+    temporaryOverload &&
+    !quotaProblem
+  ) {
+    result = await send({
+      ...requestBody,
+      model: BACKUP_TEXT_MODEL
+    });
+  }
+
+  return result;
 }
 
 async function runImageModel(apiKey, prompt, image) {
@@ -302,7 +349,9 @@ export async function onRequestPost({ request, env }) {
       "edit_image"
     ];
 
-    const mode = allowedModes.includes(body.mode) ? body.mode : "chat";
+    const mode = allowedModes.includes(body.mode)
+      ? body.mode
+      : "chat";
 
     const message = typeof body.message === "string"
       ? body.message.trim()
@@ -381,29 +430,22 @@ export async function onRequestPost({ request, env }) {
       requestBody.tools = [{ type: "google_search" }];
     }
 
-    const response = await fetchWithTimeout(
-      "https://generativelanguage.googleapis.com/v1beta/interactions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": env.ORVEX_GEMINI_KEY
-        },
-        body: JSON.stringify(requestBody)
-      },
-      55000
+    const { response, data } = await callTextModelWithFallback(
+      env.ORVEX_GEMINI_KEY,
+      requestBody
     );
-
-    const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
       return jsonResponse({
         error: data?.error?.message ||
-          `Gemini request failed with status ${response.status}.`
+          `Gemini request failed with status ${response.status}. Both text models may be unavailable.`
       }, response.status >= 500 ? 502 : 400);
     }
 
-    if (data.status === "failed" || data.status === "cancelled") {
+    if (
+      data.status === "failed" ||
+      data.status === "cancelled"
+    ) {
       return jsonResponse({
         error: "The AI service could not complete this request. Please try again."
       }, 502);
@@ -444,4 +486,4 @@ export async function onRequestPost({ request, env }) {
     }, isTimeout ? 504 : 500);
   }
       }
-    
+          
