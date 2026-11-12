@@ -1,6 +1,4 @@
 
-const FIREBASE_API_KEY = "PASTE_YOUR_EXISTING_FIREBASE_API_KEY";
-
 const TEXT_MODEL = "gemini-3.5-flash-lite";
 const BACKUP_TEXT_MODEL = "gemini-3.8-flash";
 const IMAGE_MODEL = "gemini-3.1-flash-image";
@@ -48,9 +46,13 @@ async function fetchWithTimeout(url, options, timeoutMs = 20000) {
   }
 }
 
-async function verifyFirebaseToken(idToken) {
+async function verifyFirebaseToken(idToken, apiKey) {
+  if (!apiKey || !idToken) {
+    return null;
+  }
+
   const response = await fetchWithTimeout(
-    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${FIREBASE_API_KEY}`,
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`,
     {
       method: "POST",
       headers: {
@@ -288,7 +290,6 @@ async function callTextModelWithFallback(apiKey, requestBody) {
       }
 
       // Other failures proceed to the backup model.
-
     } catch (error) {
       lastResult = {
         response: null,
@@ -393,6 +394,12 @@ export async function onRequestPost({ request, env }) {
       }, 503);
     }
 
+    if (!env.FIREBASE_API_KEY) {
+      return jsonResponse({
+        error: "Firebase authentication is not configured. Please contact support."
+      }, 503);
+    }
+
     const authorization =
       request.headers.get("Authorization") || "";
 
@@ -405,7 +412,10 @@ export async function onRequestPost({ request, env }) {
       }, 401);
     }
 
-    const user = await verifyFirebaseToken(tokenMatch[1]);
+    const user = await verifyFirebaseToken(
+      tokenMatch[1],
+      env.FIREBASE_API_KEY
+    );
 
     if (!user) {
       return jsonResponse({
@@ -626,5 +636,5 @@ export async function onRequestPost({ request, env }) {
         : error?.message || "An unexpected server error occurred."
     }, isTimeout ? 504 : 500);
   }
-  }
-          
+          }
+      
