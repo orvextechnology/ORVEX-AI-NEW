@@ -1153,7 +1153,7 @@ $("chatForm").addEventListener("submit",async event=>{
   ].slice(-20);
 
   try{
-    const idToken = await currentUser.getIdToken();
+    const idToken = await currentUser.getIdToken(true);
 
     const response = await fetch("/api/chat",{
       method:"POST",
