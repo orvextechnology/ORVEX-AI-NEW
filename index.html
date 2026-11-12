@@ -1219,7 +1219,39 @@ $("chatForm").addEventListener("submit",async event=>{
     $("sendBtn").textContent = "Send ↑";
   }
 });
+/* ORVEX INSTALL BUTTON */
+let deferredInstallPrompt = null;
 
+const authInstallBtn = $("installAuthBtn");
+const appInstallBtn = $("installAppBtn");
+
+function installButtonsReady() {
+  if (authInstallBtn) {
+    authInstallBtn.addEventListener("click", installOrvex);
+  }
+
+  if (appInstallBtn) {
+    appInstallBtn.addEventListener("click", installOrvex);
+  }
+}
+
+async function installOrvex() {
+  if (!deferredInstallPrompt) {
+    alert("Open Chrome menu (⋮) and select Install app or Add to Home screen.");
+    return;
+  }
+
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+}
+
+window.addEventListener("beforeinstallprompt", event => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+});
+
+installButtonsReady();
 /* PROGRESSIVE WEB APP — SERVICE WORKER */
 if("serviceWorker" in navigator){
   window.addEventListener("load",()=>{
