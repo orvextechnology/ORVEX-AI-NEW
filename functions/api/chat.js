@@ -1,5 +1,5 @@
 
-const FIREBASE_API_KEY = "AIzaSyD4oCtqtD8U1wnErSP10iu2sIr0XzaqrQs";
+const FIREBASE_API_KEY = "PASTE_YOUR_EXISTING_FIREBASE_API_KEY";
 
 const TEXT_MODEL = "gemini-3.5-flash-lite";
 const BACKUP_TEXT_MODEL = "gemini-3.8-flash";
@@ -138,7 +138,7 @@ function buildInteractionInput(history, message, image) {
     }]
   }));
 
-  if (image) {
+  if (image && input.length) {
     input[input.length - 1].content.push({
       type: "image",
       mime_type: image.mimeType,
@@ -203,9 +203,7 @@ function extractInteractionSources(data) {
   return sources.slice(0, 8);
 }
 
-// Fast primary model with automatic backup,
-// including when the primary request times out.
-
+// Reliable text model selection with automatic backup.
 async function callTextModelWithFallback(apiKey, requestBody) {
   const endpoint =
     "https://generativelanguage.googleapis.com/v1beta/interactions";
@@ -215,80 +213,95 @@ async function callTextModelWithFallback(apiKey, requestBody) {
     BACKUP_TEXT_MODEL
   ];
 
-  let lastError = "";
-
-  for (const model of models) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const response = await fetchWithTimeout(
-          endpoint,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-goog-api-key": apiKey
-            },
-            body: JSON.stringify({
-              ...requestBody,
-              model
-            })
-          },
-          20000
-        );
-
-        const data = await response.json().catch(() => ({}));
-
-        if (response.ok) {
-          return { response, data };
-        }
-
-        lastError =
-          data?.error?.message ||
-          `Model ${model} failed with status ${response.status}.`;
-
-        const retryable =
-          response.status === 429 ||
-          response.status === 500 ||
-          response.status === 502 ||
-          response.status === 503 ||
-          response.status === 504;
-
-        if (!retryable) {
-          break;
-        }
-
-      } catch (error) {
-        lastError = error.message || "Network error.";
-
-      }
-
-      if (attempt < 2) {
-        await new Promise(resolve => setTimeout(resolve, 800));
-      }
-    }
-  }
-
-  return {
+  let lastResult = {
     response: null,
     data: {
       error: {
-        message: lastError || "All AI models failed."
+        message: "All AI models failed to respond."
       }
     }
   };
-}
 
+  for (const model of models) {
+    try {
+      const response = await fetchWithTimeout(
+        endpoint,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey
+          },
+          body: JSON.stringify({
+            ...requestBody,
+            model
+          })
+        },
+        18000
+      );
 
+      const data = await response.json().catch(() => ({}));
 
-  
+      const reply = extractInteractionText(data);
 
-  // Backup: more capable Flash model.
-  result = await send({
-    ...requestBody,
-    model: BACKUP_TEXT_MODEL
-  }, 22000);
+      if (
+        response.ok &&
+        data.status !== "failed" &&
+        data.status !== "cancelled" &&
+        reply
+      ) {
+        return {
+          response,
+          data
+        };
+      }
 
-  return result;
+      const errorMessage =
+        data?.error?.message ||
+        (
+          !response.ok
+            ? `Model ${model} failed with HTTP ${response.status}.`
+            : data.status === "failed" || data.status === "cancelled"
+              ? `Model ${model} could not complete the request.`
+              : `Model ${model} returned no text response.`
+        );
+
+      lastResult = {
+        response,
+        data: {
+          ...data,
+          error: {
+            ...data.error,
+            message: errorMessage
+          }
+        }
+      };
+
+      // Authentication and malformed-request errors
+      // will not be fixed by switching models.
+      if (
+        response.status === 400 ||
+        response.status === 401 ||
+        response.status === 403
+      ) {
+        return lastResult;
+      }
+
+      // Other failures proceed to the backup model.
+
+    } catch (error) {
+      lastResult = {
+        response: null,
+        data: {
+          error: {
+            message: error.message || "Network connection failed."
+          }
+        }
+      };
+    }
+  }
+
+  return lastResult;
 }
 
 async function runImageModel(apiKey, prompt, image) {
@@ -473,7 +486,6 @@ export async function onRequestPost({ request, env }) {
       return jsonResponse(result);
     }
 
-    
     let instruction = SYSTEM_PROMPT;
 
     if (mode === "web_search") {
@@ -483,7 +495,7 @@ export async function onRequestPost({ request, env }) {
         }, 500);
       }
 
-      const searchResponse = await fetch(
+      const searchResponse = await fetchWithTimeout(
         "https://api.tavily.com/search",
         {
           method: "POST",
@@ -497,9 +509,9 @@ export async function onRequestPost({ request, env }) {
             topic: "general",
             max_results: 5,
             include_answer: false
-          }),
-          signal: AbortSignal.timeout(15000)
-        }
+          })
+        },
+        15000
       );
 
       const searchData = await searchResponse.json().catch(() => ({}));
@@ -566,7 +578,8 @@ export async function onRequestPost({ request, env }) {
 
     if (!result.response) {
       return jsonResponse({
-        error: "Both AI attempts failed to respond. Please try again."
+        error: result.data?.error?.message ||
+          "Both AI models failed to respond. Please try again."
       }, 504);
     }
 
@@ -584,7 +597,8 @@ export async function onRequestPost({ request, env }) {
       data.status === "cancelled"
     ) {
       return jsonResponse({
-        error: "The AI service could not complete this request. Please try again."
+        error: data?.error?.message ||
+          "The AI service could not complete this request. Please try again."
       }, 502);
     }
 
@@ -613,5 +627,4 @@ export async function onRequestPost({ request, env }) {
     }, isTimeout ? 504 : 500);
   }
   }
-        
           
