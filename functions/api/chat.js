@@ -1,6 +1,7 @@
 
 const TEXT_MODEL = "gemini-3.5-flash-lite";
-const BACKUP_TEXT_MODEL = "gemini-3.8-flash";
+const BACKUP_TEXT_MODEL = "gemini-3.6-flash";
+const IMAGE_ANALYSIS_MODEL = "gemini-3.6-flash";
 const IMAGE_MODEL = "gemini-3.1-flash-image";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -27,7 +28,7 @@ function jsonResponse(data, status = 200) {
   });
 }
 
-async function fetchWithTimeout(url, options, timeoutMs = 20000) {
+async function fetchWithTimeout(url, options, timeoutMs = 15000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -40,6 +41,7 @@ async function fetchWithTimeout(url, options, timeoutMs = 20000) {
     if (error.name === "AbortError") {
       throw new Error("The AI service timed out.");
     }
+
     throw error;
   } finally {
     clearTimeout(timer);
@@ -91,14 +93,18 @@ function parseImageData(imageData) {
   );
 
   if (!match) {
-    throw new Error("Unsupported image. Please use PNG, JPEG or WEBP.");
+    throw new Error(
+      "Unsupported image. Please use PNG, JPEG or WEBP."
+    );
   }
 
   const base64 = match[2];
   const estimatedBytes = Math.floor((base64.length * 3) / 4);
 
   if (estimatedBytes > MAX_IMAGE_BYTES) {
-    throw new Error("Image is too large. Please upload an image under 5 MB.");
+    throw new Error(
+      "Image is too large. Please upload an image under 5 MB."
+    );
   }
 
   return {
@@ -205,15 +211,14 @@ function extractInteractionSources(data) {
   return sources.slice(0, 8);
 }
 
-// Reliable text model selection with automatic backup.
-async function callTextModelWithFallback(apiKey, requestBody) {
+// Calls models in order and switches to a backup when necessary.
+async function callTextModelWithFallback(
+  apiKey,
+  requestBody,
+  models = [TEXT_MODEL, BACKUP_TEXT_MODEL]
+) {
   const endpoint =
     "https://generativelanguage.googleapis.com/v1beta/interactions";
-
-  const models = [
-    TEXT_MODEL,
-    BACKUP_TEXT_MODEL
-  ];
 
   let lastResult = {
     response: null,
@@ -239,11 +244,10 @@ async function callTextModelWithFallback(apiKey, requestBody) {
             model
           })
         },
-        18000
+        15000
       );
 
       const data = await response.json().catch(() => ({}));
-
       const reply = extractInteractionText(data);
 
       if (
@@ -263,7 +267,8 @@ async function callTextModelWithFallback(apiKey, requestBody) {
         (
           !response.ok
             ? `Model ${model} failed with HTTP ${response.status}.`
-            : data.status === "failed" || data.status === "cancelled"
+            : data.status === "failed" ||
+              data.status === "cancelled"
               ? `Model ${model} could not complete the request.`
               : `Model ${model} returned no text response.`
         );
@@ -279,8 +284,6 @@ async function callTextModelWithFallback(apiKey, requestBody) {
         }
       };
 
-      // Authentication and malformed-request errors
-      // will not be fixed by switching models.
       if (
         response.status === 400 ||
         response.status === 401 ||
@@ -289,13 +292,13 @@ async function callTextModelWithFallback(apiKey, requestBody) {
         return lastResult;
       }
 
-      // Other failures proceed to the backup model.
     } catch (error) {
       lastResult = {
         response: null,
         data: {
           error: {
-            message: error.message || "Network connection failed."
+            message: error.message ||
+              "Network connection failed."
           }
         }
       };
@@ -346,7 +349,8 @@ async function runImageModel(apiKey, prompt, image) {
 
   if (!response.ok) {
     throw new Error(
-      data?.error?.message || "The image service request failed."
+      data?.error?.message ||
+      "The image service request failed."
     );
   }
 
@@ -479,6 +483,7 @@ export async function onRequestPost({ request, env }) {
       }, 400);
     }
 
+    // Image generation and editing use the dedicated image model.
     if (
       mode === "generate_image" ||
       mode === "edit_image"
@@ -496,8 +501,7 @@ export async function onRequestPost({ request, env }) {
       return jsonResponse(result);
     }
 
-    let instruction = SYSTEM_PROMPT;
-
+    // Web search is handled separately from the AI text models.
     if (mode === "web_search") {
       if (!env.TAVILY_API_KEY) {
         return jsonResponse({
@@ -524,7 +528,8 @@ export async function onRequestPost({ request, env }) {
         15000
       );
 
-      const searchData = await searchResponse.json().catch(() => ({}));
+      const searchData =
+        await searchResponse.json().catch(() => ({}));
 
       if (!searchResponse.ok) {
         return jsonResponse({
@@ -556,6 +561,8 @@ export async function onRequestPost({ request, env }) {
       });
     }
 
+    let instruction = SYSTEM_PROMPT;
+
     if (mode === "translate") {
       instruction +=
         " Translate faithfully into the target language specified by the user. If no target language is specified, ask which language they want.";
@@ -563,7 +570,7 @@ export async function onRequestPost({ request, env }) {
 
     if (mode === "analyze_image") {
       instruction +=
-        " Analyze the attached image carefully. Describe visible details and distinguish observation from inference.";
+        " Analyze the attached image carefully. Describe visible details, objects, text and relevant features. Distinguish direct observation from inference. Do not claim to see details that are unclear.";
     }
 
     const requestBody = {
@@ -581,15 +588,29 @@ export async function onRequestPost({ request, env }) {
       }
     };
 
+    // Image analysis starts with a dedicated multimodal model.
+    // Normal chat starts with the faster Flash-Lite model.
+    const modelsToTry = mode === "analyze_image"
+      ? [
+          IMAGE_ANALYSIS_MODEL,
+          TEXT_MODEL,
+          BACKUP_TEXT_MODEL
+        ]
+      : [
+          TEXT_MODEL,
+          BACKUP_TEXT_MODEL
+        ];
+
     const result = await callTextModelWithFallback(
       env.ORVEX_GEMINI_KEY,
-      requestBody
+      requestBody,
+      modelsToTry
     );
 
     if (!result.response) {
       return jsonResponse({
         error: result.data?.error?.message ||
-          "Both AI models failed to respond. Please try again."
+          "The AI models failed to respond. Please try again."
       }, 504);
     }
 
@@ -636,5 +657,5 @@ export async function onRequestPost({ request, env }) {
         : error?.message || "An unexpected server error occurred."
     }, isTimeout ? 504 : 500);
   }
-          }
-      
+}
+  
