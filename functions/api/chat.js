@@ -205,44 +205,80 @@ function extractInteractionSources(data) {
 
 // Fast primary model with automatic backup,
 // including when the primary request times out.
+
 async function callTextModelWithFallback(apiKey, requestBody) {
   const endpoint =
     "https://generativelanguage.googleapis.com/v1beta/interactions";
 
-  async function send(payload, timeoutMs) {
-    try {
-      const response = await fetchWithTimeout(
-        endpoint,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-goog-api-key": apiKey
+  const models = [
+    TEXT_MODEL,
+    BACKUP_TEXT_MODEL
+  ];
+
+  let lastError = "";
+
+  for (const model of models) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await fetchWithTimeout(
+          endpoint,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": apiKey
+            },
+            body: JSON.stringify({
+              ...requestBody,
+              model
+            })
           },
-          body: JSON.stringify(payload)
-        },
-        timeoutMs
-      );
+          20000
+        );
 
-      const data = await response.json().catch(() => ({}));
+        const data = await response.json().catch(() => ({}));
 
-      return {
-        response,
-        data,
-        timedOut: false
-      };
-    } catch (error) {
-      return {
-        response: null,
-        data: {
-          error: {
-            message: error.message || "Gemini request failed."
-          }
-        },
-        timedOut: /timed out/i.test(error.message || "")
-      };
+        if (response.ok) {
+          return { response, data };
+        }
+
+        lastError =
+          data?.error?.message ||
+          `Model ${model} failed with status ${response.status}.`;
+
+        const retryable =
+          response.status === 429 ||
+          response.status === 500 ||
+          response.status === 502 ||
+          response.status === 503 ||
+          response.status === 504;
+
+        if (!retryable) {
+          break;
+        }
+
+      } catch (error) {
+        lastError = error.message || "Network error.";
+
+      }
+
+      if (attempt < 2) {
+        await new Promise(resolve => setTimeout(resolve, 800));
+      }
     }
   }
+
+  return {
+    response: null,
+    data: {
+      error: {
+        message: lastError || "All AI models failed."
+      }
+    }
+  };
+}
+
+
 
   // Primary: fast, lightweight model.
   let result = await send(requestBody, 14000);
