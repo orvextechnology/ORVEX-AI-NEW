@@ -337,7 +337,7 @@ async function runImageModel(apiKey, prompt, image) {
         input,
         response_format: {
           type: "image",
-          mime_type: "image/png",
+          mime_type: "image/jpeg",
           aspect_ratio: "1:1"
         }
       })
@@ -382,7 +382,7 @@ async function runImageModel(apiKey, prompt, image) {
   const mimeType =
     imageBlock.mime_type ||
     imageBlock.mimeType ||
-    "image/png";
+    "image/jpeg";
 
   return {
     reply: text.trim() || "Your image is ready.",
@@ -657,5 +657,5 @@ export async function onRequestPost({ request, env }) {
         : error?.message || "An unexpected server error occurred."
     }, isTimeout ? 504 : 500);
   }
-}
-  
+  }
+    
