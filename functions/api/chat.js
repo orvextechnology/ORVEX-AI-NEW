@@ -280,38 +280,7 @@ async function callTextModelWithFallback(apiKey, requestBody) {
 
 
 
-  // Primary: fast, lightweight model.
-  let result = await send(requestBody, 14000);
-
-  const errorMessage = String(
-    result.data?.error?.message || ""
-  ).toLowerCase();
-
-  const errorStatus = String(
-    result.data?.error?.status || ""
-  ).toLowerCase();
-
-  const temporaryOverload =
-    result.response?.status === 503 ||
-    result.response?.status === 429 ||
-    /high demand|overload|temporarily unavailable|resource exhausted|try again later/i.test(errorMessage) ||
-    /resource_exhausted|unavailable/i.test(errorStatus);
-
-  const quotaProblem =
-    /quota exceeded|billing|insufficient quota/i.test(errorMessage);
-
-  const shouldUseBackup =
-    result.timedOut ||
-    (
-      result.response &&
-      !result.response.ok &&
-      temporaryOverload &&
-      !quotaProblem
-    );
-
-  if (!shouldUseBackup) {
-    return result;
-  }
+  
 
   // Backup: more capable Flash model.
   result = await send({
